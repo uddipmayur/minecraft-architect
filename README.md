@@ -43,8 +43,6 @@ npm install
 
 ```bash
 npx serve@latest .
-# or use any static file server:
-# python -m http.server 8080
 ```
 
 Open `http://localhost:3000` (or `:8080`) in your browser.
