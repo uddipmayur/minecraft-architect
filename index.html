@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Litematica Viewer | Minecraft Architect</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body { background: #0d0a0e; color: #e6d5c3; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+        canvas { display: block; }
+        .panel { position: absolute; z-index: 10; background: rgba(20, 10, 15, 0.88); backdrop-filter: blur(12px); border: 1px solid rgba(255, 100, 50, 0.15); border-radius: 12px; padding: 14px 18px; font-size: 13px; }
+        #info { top: 16px; left: 16px; max-width: 310px; }
+        #info h1 { font-size: 22px; margin-bottom: 4px; background: linear-gradient(90deg, #ff6a33, #ff3333, #cc33ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800; }
+        #info .subtitle { font-size: 11px; color: #8a7a70; margin-bottom: 10px; }
+        .stat { color: #a09080; margin: 3px 0; }
+        .stat span { color: #ff8855; font-weight: 600; }
+        .controls-hint { margin-top: 10px; font-size: 11px; color: #6a5a50; line-height: 1.7; }
+        #tools { top: 16px; left: 340px; width: 260px; }
+        #tools h3 { font-size: 13px; color: #ff8855; margin-bottom: 8px; }
+        .btn { display: inline-block; background: rgba(255, 100, 50, 0.1); border: 1px solid rgba(255, 100, 50, 0.3); color: #ff8855; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; cursor: pointer; transition: 0.2s; margin-top: 8px; width: 100%; text-align: center; }
+        .btn:hover { background: rgba(255, 100, 50, 0.2); }
+        input[type=file] { font-size: 11px; color: #aaa; width: 100%; }
+        #layer-control { top: 16px; right: 16px; }
+        #layer-control label { font-size: 13px; color: #a09080; }
+        #layer-control label span { color: #ff8855; font-weight: 600; }
+        #layer-slider { width: 180px; margin-top: 6px; accent-color: #ff6a33; display: block; }
+        #render-stats { position: absolute; bottom: 16px; left: 16px; z-index: 10; background: rgba(20, 10, 15, 0.75); backdrop-filter: blur(8px); border: 1px solid rgba(255, 100, 50, 0.1); border-radius: 8px; padding: 8px 14px; font-size: 11px; color: #6a5a50; }
+        #render-stats span { color: #ff8855; }
+        #loading { position: fixed; inset: 0; z-index: 999; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0d0a0e; font-size: 18px; color: #ff6a33; transition: opacity 0.6s; }
+        #loading.hide { opacity: 0; pointer-events: none; }
+        #loading-progress { margin-top: 12px; font-size: 12px; color: #8a7a70; }
+        .crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 20px; height: 20px; z-index: 15; pointer-events: none; opacity: 0.4; }
+        .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #fff; }
+        .crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+        .crosshair::after { width: 100%; height: 2px; top: 50%; transform: translateY(-50%); }
+    </style>
+</head>
+
+<body>
+    <div id="loading">⚡ Loading Litematica…<div id="loading-progress"></div></div>
+    <div class="panel" id="info">
+        <h1 id="build-name">No Schematic Loaded</h1>
+        <div class="subtitle" id="build-desc">Litematica Viewer</div>
+        <div class="stat">Blocks: <span id="block-count">—</span></div>
+        <div class="stat">Dimensions: <span id="build-size">—</span></div>
+        <div class="stat">Faces: <span id="face-count">—</span></div>
+        <div class="stat">Vertices: <span id="vertex-count">—</span></div>
+        <div class="controls-hint">🖱 Right-click drag to look | WASD to fly<br>Space/Shift for up/down | Scroll for speed</div>
+    </div>
+    <div class="panel" id="tools">
+        <h3>📂 Load .litematica</h3>
+        <input type="file" id="upload-file" accept=".litematic,.schem">
+        <a href="nether_hub.litematic" download class="btn" id="download-btn">⬇ Download Nether Hub.litematic</a>
+    </div>
+    <div class="panel" id="layer-control">
+        <label>Layer: <span id="layer-value">All</span></label>
+        <input type="range" id="layer-slider" min="0" max="100" value="100">
+        <div style="margin-top: 10px;">
+            <label>WASD Speed: <span id="speed-value">0.5</span></label>
+            <input type="range" id="speed-slider" min="0.1" max="3.0" step="0.1" value="0.5">
+        </div>
+        <div style="margin-top: 10px;">
+            <label><input type="checkbox" id="ao-toggle" checked style="accent-color:#ff6a33"> Ambient Occlusion</label>
+        </div>
+    </div>
+    <div class="crosshair" id="crosshair" style="display:none;"></div>
+    <div id="render-stats">FPS: <span id="fps-counter">0</span> | Draw calls: <span id="draw-calls">0</span> | Triangles: <span id="tri-count">0</span></div>
+    <canvas id="viewport"></canvas>
+
+    <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/", "nbtify": "https://esm.sh/nbtify@2.2.0" } }
+    </script>
+    <script type="module">
+        window.addEventListener('error', e => { document.getElementById('loading').innerHTML = '<div style="color:red;font-size:12px;text-align:left;background:#111;padding:20px;max-width:600px;word-wrap:break-word;">Error: ' + e.message + '<br>' + e.filename + ':' + e.lineno + '</div>'; });
+        window.addEventListener('unhandledrejection', e => { document.getElementById('loading').innerHTML = '<div style="color:red;font-size:12px;text-align:left;background:#111;padding:20px;max-width:600px;word-wrap:break-word;">Promise Error: ' + (e.reason && e.reason.stack || e.reason) + '</div>'; });
+
+        import * as THREE from 'three';
+        import * as NBT from 'nbtify';
+        import { generateDefaultBuild } from './agent_creation.js';
+
+        // ═══════════════════════════════════════════════════════════
+        // CONSTANTS
+        // ═══════════════════════════════════════════════════════════
+        const ATLAS_TEX_SIZE = 16, ATLAS_COLS = 64;
+        const SKIP_BLOCKS = new Set(['air','cave_air','void_air','structure_void','barrier','light','moving_piston']);
+
+        // Full-cube opaque blocks occlude neighbors for face culling
+        function isOpaqueFullCube(baseName) {
+            if (!baseName || SKIP_BLOCKS.has(baseName)) return false;
+            // Non-opaque patterns
+            const nonOpaque = ['glass','leaves','ice','torch','lantern','chain','bars',
+                'ladder','vine','lichen','portal','cobweb','rail','lever','tripwire',
+                'fence','button','pressure_plate','carpet','snow','sign','banner',
+                'flower','sapling','mushroom','coral','kelp','seagrass','fern','grass_block',
+                'tall_grass','sugar_cane','bamboo','dead_bush','sweet_berry','cave_vines',
+                'glow_lichen','sculk_vein','hanging_roots','spore_blossom',
+                'slab','stairs','wall','trapdoor','door','campfire','candle',
+                'head','skull','chest','ender_chest','trapped_chest','hopper','lectern',
+                'composter','bed','cake','brewing_stand','cauldron','anvil','bell',
+                'grindstone','stonecutter','enchanting_table','end_rod','lightning_rod',
+                'pointed_dripstone','amethyst_cluster','amethyst_bud',
+                'scaffolding','honey_block','slime_block','spawner','conduit',
+                'beacon','end_gateway','end_portal','structure_block','jigsaw',
+                'command_block','repeating_command_block','chain_command_block',
+                'piston','sticky_piston','piston_head','redstone_wire','repeater','comparator',
+                'daylight_detector','observer','note_block','tnt',
+                'item_frame','glow_item_frame','painting','armor_stand'];
+            for (const p of nonOpaque) {
+                if (baseName.includes(p)) return false;
+            }
+            // Stained glass check (has color prefix)
+            if (baseName.endsWith('_glass') || baseName.endsWith('_glass_pane')) return false;
+            return true;
+        }
+
+        // Default full-cube element (0,0,0 → 16,16,16)
+        const FULL_CUBE_ELEMENTS = [{
+            from: [0, 0, 0], to: [16, 16, 16],
+            faces: {
+                down:  { texture: '#down',  cullface: 'down' },
+                up:    { texture: '#up',    cullface: 'up' },
+                north: { texture: '#north', cullface: 'north' },
+                south: { texture: '#south', cullface: 'south' },
+                west:  { texture: '#west',  cullface: 'west' },
+                east:  { texture: '#east',  cullface: 'east' },
+            }
+        }];
+
+        // Neighbor offsets for face culling
+        const FACE_DIRS = {
+            east:  [1, 0, 0], west:  [-1, 0, 0],
+            up:    [0, 1, 0], down:  [0, -1, 0],
+            south: [0, 0, 1], north: [0, 0, -1],
+        };
+
+        // ═══════════════════════════════════════════════════════════
+        // TEXTURE ATLAS
+        // ═══════════════════════════════════════════════════════════
+        const textureIndex = {};
+        let atlasRows = 0, nextAtlasIdx = 0;
+        const atlasCanvas = document.createElement('canvas');
+        const atlasCtx = atlasCanvas.getContext('2d', { willReadFrequently: true });
+
+        function initAtlas() {
+            atlasCanvas.width = ATLAS_COLS * ATLAS_TEX_SIZE;
+            atlasCanvas.height = 128 * ATLAS_TEX_SIZE;
+            atlasRows = 128;
+            for (const k in textureIndex) delete textureIndex[k];
+            for (const k in modelCache) delete modelCache[k];
+            for (const k in blockstateCache) delete blockstateCache[k];
+            for (const k in resolvedModels) delete resolvedModels[k];
+            // Missing texture pattern at idx 0
+            const px = 0, py = 0;
+            for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+                atlasCtx.fillStyle = ((x < 8) ^ (y < 8)) ? '#ff00ff' : '#000000';
+                atlasCtx.fillRect(px + x, py + y, 1, 1);
+            }
+            textureIndex['__missing__'] = 0;
+            nextAtlasIdx = 1;
+        }
+
+        function growAtlas() {
+            const need = Math.ceil((nextAtlasIdx + 1) / ATLAS_COLS);
+            if (need > atlasRows) {
+                const old = atlasCtx.getImageData(0, 0, atlasCanvas.width, atlasCanvas.height);
+                atlasRows = need + 64;
+                atlasCanvas.height = atlasRows * ATLAS_TEX_SIZE;
+                atlasCanvas.width = ATLAS_COLS * ATLAS_TEX_SIZE;
+                atlasCtx.putImageData(old, 0, 0);
+            }
+        }
+
+        async function loadTex(texName) {
+            if (textureIndex[texName] !== undefined) return textureIndex[texName];
+            const clean = texName.replace('minecraft:', '').replace('block/', '');
+            if (textureIndex[clean] !== undefined) return textureIndex[clean];
+
+            // Try multiple path patterns
+            const tryPaths = [
+                `assets/minecraft/textures/block/${clean}.png`,
+                `assets/minecraft/textures/block/${clean}_top.png`,
+                `assets/minecraft/textures/block/${clean}_side.png`,
+                `assets/minecraft/textures/block/${clean}_front.png`,
+            ];
+
+            for (const path of tryPaths) {
+                const idx = await tryLoadImage(path, clean);
+                if (idx !== null) {
+                    textureIndex[texName] = idx;
+                    textureIndex[clean] = idx;
+                    return idx;
+                }
+                if (path !== tryPaths[0]) break; // Only try first path's exact name, then fallback variants
+            }
+
+            // Fallback: try just the first path
+            textureIndex[texName] = 0;
+            textureIndex[clean] = 0;
+            return 0;
+        }
+
+        function tryLoadImage(path, cacheKey) {
+            return new Promise(resolve => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    growAtlas();
+                    const idx = nextAtlasIdx++;
+                    const col = idx % ATLAS_COLS, row = Math.floor(idx / ATLAS_COLS);
+                    // Animated textures are taller than 16px (e.g. water 16x512).
+                    // Always draw only the first 16x16 frame from the source.
+                    const srcW = Math.min(img.naturalWidth, 16);
+                    const srcH = Math.min(img.naturalHeight, 16);
+                    atlasCtx.drawImage(img, 0, 0, srcW, srcH, col * ATLAS_TEX_SIZE, row * ATLAS_TEX_SIZE, ATLAS_TEX_SIZE, ATLAS_TEX_SIZE);
+                    resolve(idx);
+                };
+                img.onerror = () => resolve(null);
+                img.src = path;
+            });
+        }
+
+        function getAtlasUV(idx, eu0 = 0, ev0 = 0, eu1 = 16, ev1 = 16) {
+            // eu0..eu1, ev0..ev1 are element UVs in 0-16 space
+            const col = idx % ATLAS_COLS, row = Math.floor(idx / ATLAS_COLS);
+            const aw = ATLAS_COLS * ATLAS_TEX_SIZE, ah = atlasRows * ATLAS_TEX_SIZE;
+            const eps = 0.1 / aw;
+            const baseU = (col * ATLAS_TEX_SIZE) / aw;
+            const baseV = 1.0 - ((row + 1) * ATLAS_TEX_SIZE) / ah;
+            const sizeU = ATLAS_TEX_SIZE / aw;
+            const sizeV = ATLAS_TEX_SIZE / ah;
+            return {
+                u0: baseU + (eu0 / 16) * sizeU + eps,
+                v0: baseV + (1 - ev1 / 16) * sizeV + eps,
+                u1: baseU + (eu1 / 16) * sizeU - eps,
+                v1: baseV + (1 - ev0 / 16) * sizeV - eps,
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // MODEL RESOLUTION — Parse MC JSON model chain
+        // ═══════════════════════════════════════════════════════════
+        const modelCache = {};
+        const blockstateCache = {};
+        const resolvedModels = {}; // fullBlockName → { quads: [...], isFullCube }
+
+        async function fetchJSON(path) {
+            try { const r = await fetch(path); if (!r.ok) return null; return await r.json(); }
+            catch { return null; }
+        }
+
+        async function resolveModelChain(modelRef) {
+            const key = modelRef.replace('minecraft:', '');
+            if (modelCache[key]) return modelCache[key];
+            const json = await fetchJSON(`assets/minecraft/models/${key}.json`);
+            if (!json) { modelCache[key] = null; return null; }
+            let parentData = {};
+            if (json.parent) {
+                parentData = await resolveModelChain(json.parent.replace('minecraft:', '')) || {};
+            }
+            const merged = {
+                textures: { ...(parentData.textures || {}), ...(json.textures || {}) },
+                elements: json.elements || parentData.elements || null,
+            };
+            modelCache[key] = merged;
+            return merged;
+        }
+
+        // Extract texture string from possibly object-format refs
+        // (e.g. stained glass: { "force_translucent": true, "sprite": "minecraft:block/..." })
+        function unwrapTexValue(val) {
+            if (typeof val === 'string') return val;
+            if (val && typeof val === 'object') {
+                if (val.sprite) return String(val.sprite);
+                if (val.texture) return String(val.texture);
+            }
+            return null;
+        }
+
+        function resolveTexRef(startKey, texMap) {
+            let val = texMap[startKey];
+            val = unwrapTexValue(val);
+            if (val === undefined || val === null || typeof val !== 'string') return null;
+            const seen = new Set();
+            while (val && typeof val === 'string' && val.startsWith('#')) {
+                const v = val.substring(1);
+                if (seen.has(v)) break;
+                seen.add(v);
+                val = unwrapTexValue(texMap[v]);
+            }
+            return (typeof val === 'string') ? val : null;
+        }
+
+        function parseBlockName(fullName) {
+            const clean = fullName.replace('minecraft:', '');
+            const bi = clean.indexOf('[');
+            if (bi === -1) return { baseName: clean, props: {} };
+            const baseName = clean.substring(0, bi);
+            const propsStr = clean.substring(bi + 1, clean.length - 1);
+            const props = {};
+            if (propsStr) for (const pair of propsStr.split(',')) {
+                const eq = pair.indexOf('=');
+                if (eq > 0) props[pair.substring(0, eq)] = pair.substring(eq + 1);
+            }
+            return { baseName, props };
+        }
+
+        function matchVariant(blockstate, props) {
+            if (!blockstate) return null;
+            if (blockstate.variants) {
+                // Build key from sorted properties (exact match first)
+                const propStr = Object.keys(props).sort()
+                    .map(k => `${k}=${props[k]}`).join(',');
+                let v = blockstate.variants[propStr];
+                if (!v) {
+                    // Variant keys often omit properties like 'waterlogged'.
+                    // Parse the first variant key to find which properties it uses,
+                    // then rebuild our key using only those properties.
+                    const variantKeys = Object.keys(blockstate.variants);
+                    if (variantKeys.length > 0 && variantKeys[0] !== '') {
+                        const sampleKey = variantKeys[0];
+                        const variantProps = sampleKey.split(',').map(p => p.split('=')[0]);
+                        const subsetKey = variantProps.sort()
+                            .map(k => `${k}=${props[k] !== undefined ? props[k] : ''}`)
+                            .join(',');
+                        v = blockstate.variants[subsetKey];
+                    }
+                }
+                if (!v) v = blockstate.variants[''];
+                if (!v) v = blockstate.variants[Object.keys(blockstate.variants)[0]];
+                if (v) return Array.isArray(v) ? v[0] : v;
+            }
+            if (blockstate.multipart) {
+                // Use first applicable part's model
+                for (const part of blockstate.multipart) {
+                    if (!part.when || matchMultipartWhen(part.when, props)) {
+                        const apply = Array.isArray(part.apply) ? part.apply[0] : part.apply;
+                        return apply;
+                    }
+                }
+                if (blockstate.multipart.length > 0) {
+                    const apply = blockstate.multipart[0].apply;
+                    return Array.isArray(apply) ? apply[0] : apply;
+                }
+            }
+            return null;
+        }
+
+        function matchMultipartWhen(when, props) {
+            if (when.OR) return when.OR.some(w => matchMultipartWhen(w, props));
+            if (when.AND) return when.AND.every(w => matchMultipartWhen(w, props));
+            for (const [k, v] of Object.entries(when)) {
+                if (k === 'OR' || k === 'AND') continue;
+                const vals = String(v).split('|');
+                if (!vals.includes(props[k])) return false;
+            }
+            return true;
+        }
+
+        // Rotation helpers for blockstate model rotation
+        function rotatePoint(px, py, pz, rx, ry) {
+            let x = px - 8, y = py - 8, z = pz - 8; // center at origin
+            // Y rotation (CW from above, matching Minecraft blockstate convention)
+            for (let i = 0; i < ((ry || 0) / 90); i++) {
+                const tmp = x; x = -z; z = tmp;
+            }
+            // X rotation
+            for (let i = 0; i < ((rx || 0) / 90); i++) {
+                const tmp = y; y = -z; z = tmp;
+            }
+            return [x + 8, y + 8, z + 8];
+        }
+
+        function rotateFaceName(faceName, rx, ry) {
+            const faceOrder = { east: 0, south: 1, west: 2, north: 3 };
+            const vertOrder = { up: 0, south: 1, down: 2, north: 3 }; // for X rotation
+            let name = faceName;
+            // Y rotation
+            if (ry && (name === 'north' || name === 'south' || name === 'east' || name === 'west')) {
+                const horiz = ['east', 'south', 'west', 'north'];
+                const idx = horiz.indexOf(name);
+                name = horiz[(idx + ry / 90) % 4];
+            }
+            // X rotation
+            if (rx && (name === 'up' || name === 'down' || name === 'north' || name === 'south')) {
+                const vert = ['up', 'south', 'down', 'north'];
+                const idx = vert.indexOf(name);
+                name = vert[(idx + rx / 90) % 4];
+            }
+            return name;
+        }
+
+        // Generate quads from model elements
+        // Returns: { quads: [{verts, normal, texIdx, uvs, cullface}], isFullCube }
+        // ═══════════════════════════════════════════════════════════
+        // BIOME TINTING — Apply green tint to grass/leaves/vines
+        // ═══════════════════════════════════════════════════════════
+        // Default plains biome tint color
+        const GRASS_TINT = [0x5B / 255, 0xB3 / 255, 0x3E / 255]; // #5BB33E approx — vibrant green
+        const FOLIAGE_TINT = [0x3F / 255, 0xA5 / 255, 0x2D / 255]; // slightly darker
+        const WATER_TINT = [0x3F / 255, 0x76 / 255, 0xE4 / 255]; // water blue
+
+        // Blocks that need grass-style biome tinting
+        const GRASS_TINTED_BLOCKS = new Set([
+            'grass_block', 'short_grass', 'tall_grass', 'fern', 'large_fern',
+            'sugar_cane', 'potted_fern',
+        ]);
+        // Blocks that need foliage-style biome tinting
+        const FOLIAGE_TINTED_BLOCKS = new Set([
+            'oak_leaves', 'birch_leaves', 'jungle_leaves', 'acacia_leaves',
+            'dark_oak_leaves', 'mangrove_leaves', 'vine', 'glow_lichen',
+        ]);
+        // Blocks that need water tinting
+        const WATER_TINTED_BLOCKS = new Set([
+            'water', 'bubble_column', 'kelp', 'kelp_plant',
+            'seagrass', 'tall_seagrass',
+        ]);
+
+        function getTintForBlock(baseName) {
+            if (GRASS_TINTED_BLOCKS.has(baseName)) return GRASS_TINT;
+            if (FOLIAGE_TINTED_BLOCKS.has(baseName)) return FOLIAGE_TINT;
+            if (WATER_TINTED_BLOCKS.has(baseName)) return WATER_TINT;
+            return null;
+        }
+
+        // Check if a block should be rendered translucent
+        function isTranslucentBlock(baseName) {
+            if (!baseName) return false;
+            if (baseName === 'water' || baseName === 'bubble_column') return true;
+            if (baseName === 'ice') return true;
+            if (baseName === 'slime_block' || baseName === 'honey_block') return true;
+            if (baseName === 'glass' || baseName.endsWith('_stained_glass')) return true;
+            if (baseName.includes('stained_glass_pane') || baseName === 'glass_pane') return true;
+            if (baseName === 'tinted_glass') return true;
+            return false;
+        }
+
+        // Custom elements for blocks that have no model elements
+        // Chest: roughly 14x14x14 centered box at y=0
+        const CHEST_ELEMENTS = [
+            { from: [1, 0, 1], to: [15, 14, 15],
+              faces: {
+                down:  { texture: '#particle', cullface: 'down' },
+                up:    { texture: '#particle' },
+                north: { texture: '#particle' },
+                south: { texture: '#particle' },
+                west:  { texture: '#particle' },
+                east:  { texture: '#particle' },
+              }
+            }
+        ];
+
+        async function buildBlockQuads(baseName, props) {
+            const cacheKey = baseName + '|' + Object.keys(props).sort().map(k => k + '=' + props[k]).join(',');
+            if (resolvedModels[cacheKey]) return resolvedModels[cacheKey];
+
+            // Load blockstate
+            let bs = blockstateCache[baseName];
+            if (bs === undefined) {
+                bs = await fetchJSON(`assets/minecraft/blockstates/${baseName}.json`);
+                blockstateCache[baseName] = bs;
+            }
+
+            const variant = matchVariant(bs, props);
+            const modelRef = variant?.model || `minecraft:block/${baseName}`;
+            const rotX = variant?.x || 0;
+            const rotY = variant?.y || 0;
+
+            // Resolve model chain
+            const model = await resolveModelChain(modelRef.replace('minecraft:', ''));
+
+            // Get elements; use custom elements for special blocks
+            let elements = model?.elements;
+            if (!elements) {
+                // Special handling for blocks with no geometry
+                if (baseName === 'chest' || baseName === 'trapped_chest' || baseName === 'ender_chest') {
+                    elements = CHEST_ELEMENTS;
+                } else if (baseName === 'water' || baseName === 'lava' || baseName === 'bubble_column') {
+                    elements = FULL_CUBE_ELEMENTS;
+                } else {
+                    elements = FULL_CUBE_ELEMENTS;
+                }
+            }
+            const texMap = model?.textures || {};
+
+            // Resolve texture for a face
+            async function resolveFaceTex(faceData) {
+                if (!faceData || !faceData.texture) return 0;
+                let ref = faceData.texture;
+                if (typeof ref === 'string' && ref.startsWith('#')) {
+                    ref = resolveTexRef(ref.substring(1), texMap);
+                }
+                // If ref is an object (e.g. stained glass format), unwrap it
+                ref = unwrapTexValue(ref);
+                if (!ref) {
+                    // Fallbacks
+                    ref = resolveTexRef('all', texMap)
+                       || resolveTexRef('side', texMap)
+                       || resolveTexRef('end', texMap)
+                       || resolveTexRef('particle', texMap);
+                }
+                if (!ref || typeof ref !== 'string') {
+                    return await loadTex(baseName);
+                }
+                return await loadTex(ref);
+            }
+
+            const quads = [];
+            let isFullCube = false;
+
+            // Check if this is a standard full cube
+            if (elements.length === 1) {
+                const e = elements[0];
+                if (e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 &&
+                    e.to[0] === 16 && e.to[1] === 16 && e.to[2] === 16 &&
+                    rotX === 0 && rotY === 0) {
+                    isFullCube = true;
+                }
+            }
+
+            for (const elem of elements) {
+                const [fx, fy, fz] = elem.from;
+                const [tx, ty, tz] = elem.to;
+
+                // 8 corners of the element box (0-16 space)
+                const rawCorners = [
+                    [fx, fy, fz], [tx, fy, fz], [tx, ty, fz], [fx, ty, fz],
+                    [fx, fy, tz], [tx, fy, tz], [tx, ty, tz], [fx, ty, tz],
+                ];
+
+                // Apply rotation
+                const corners = rawCorners.map(([px, py, pz]) => {
+                    const [rx, ry, rz] = rotatePoint(px, py, pz, rotX, rotY);
+                    return [rx / 16, ry / 16, rz / 16]; // Convert to 0-1 block space
+                });
+
+                // Face definitions: corner indices (CCW winding from outside for Three.js) + default UVs
+                const faceDefs = {
+                    down:  { ci: [0, 4, 5, 1], defUV: [fx, fz, tx, tz] },
+                    up:    { ci: [7, 3, 2, 6], defUV: [fx, fz, tx, tz] },
+                    north: { ci: [0, 1, 2, 3], defUV: [16-tx, 16-ty, 16-fx, 16-fy] },
+                    south: { ci: [5, 4, 7, 6], defUV: [fx, 16-ty, tx, 16-fy] },
+                    west:  { ci: [4, 0, 3, 7], defUV: [fz, 16-ty, tz, 16-fy] },
+                    east:  { ci: [1, 5, 6, 2], defUV: [16-tz, 16-ty, 16-fz, 16-fy] },
+                };
+
+                for (const [faceName, def] of Object.entries(faceDefs)) {
+                    const faceData = elem.faces?.[faceName];
+                    if (!faceData) continue;
+
+                    const texIdx = await resolveFaceTex(faceData);
+                    const uv = faceData.uv || def.defUV;
+                    const { u0, v0, u1, v1 } = getAtlasUV(texIdx, uv[0], uv[1], uv[2], uv[3]);
+
+                    // Get rotated face name for cullface
+                    let cullface = faceData.cullface || null;
+                    if (cullface && (rotX || rotY)) {
+                        cullface = rotateFaceName(cullface, rotX, rotY);
+                    }
+
+                    // Rotated face normal direction
+                    const rotatedFace = (rotX || rotY) ? rotateFaceName(faceName, rotX, rotY) : faceName;
+
+                    const v = def.ci.map(i => corners[i]);
+                    const n = FACE_DIRS[rotatedFace] || FACE_DIRS[faceName] || [0, 1, 0];
+
+                    // Check for tintindex on the face
+                    const hasTint = faceData.tintindex !== undefined;
+
+                    // Apply face texture rotation (0, 90, 180, 270)
+                    let faceUVs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
+                    const faceRot = faceData.rotation || 0;
+                    if (faceRot) {
+                        const steps = (faceRot / 90) % 4;
+                        for (let s = 0; s < steps; s++) {
+                            faceUVs = [faceUVs[1], faceUVs[2], faceUVs[3], faceUVs[0]];
+                        }
+                    }
+
+                    quads.push({
+                        verts: v,
+                        normal: n,
+                        uvs: faceUVs,
+                        cullface: cullface,
+                        faceName: rotatedFace,
+                        tinted: hasTint,
+                    });
+                }
+            }
+
+            const isTranslucent = isTranslucentBlock(baseName);
+            const result = { quads, isFullCube, isTranslucent };
+            resolvedModels[cacheKey] = result;
+            return result;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // LITEMATICA UNPACKER
+        // ═══════════════════════════════════════════════════════════
+        function unpackBlockStates(longArray, bitsPerBlock, totalBlocks) {
+            const blocks = new Int32Array(totalBlocks);
+            let longIndex = 0, bitOffset = 0;
+            for (let i = 0; i < totalBlocks; i++) {
+                let blockVal = 0n, bitsToRead = bitsPerBlock, bitsRead = 0;
+                while (bitsToRead > 0 && longIndex < longArray.length) {
+                    const currentLong = BigInt.asUintN(64, longArray[longIndex]);
+                    const bitsAvailable = 64 - bitOffset;
+                    const bitsToTake = Math.min(bitsToRead, bitsAvailable);
+                    const mask = (1n << BigInt(bitsToTake)) - 1n;
+                    blockVal |= ((currentLong >> BigInt(bitOffset)) & mask) << BigInt(bitsRead);
+                    bitsToRead -= bitsToTake;
+                    bitsRead += bitsToTake;
+                    bitOffset += bitsToTake;
+                    if (bitOffset >= 64) { bitOffset = 0; longIndex++; }
+                }
+                blocks[i] = Number(blockVal);
+            }
+            return blocks;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // THREE.JS SCENE + SHADER
+        // ═══════════════════════════════════════════════════════════
+        const canvas = document.getElementById('viewport');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x87CEEB);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0xC8DCF0, 80, 250);
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 500);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+        const sun = new THREE.DirectionalLight(0xfff8e7, 1.0);
+        sun.position.set(0.4, 1.0, 0.2).normalize();
+        scene.add(sun);
+        scene.add(new THREE.HemisphereLight(0x87CEEB, 0x444444, 0.3));
+
+        const grid = new THREE.GridHelper(200, 200, 0x4a8a4a, 0x3a6a3a);
+        grid.position.set(0, -0.01, 0);
+        grid.material.opacity = 0.3;
+        grid.material.transparent = true;
+        scene.add(grid);
+
+        const vtxShader = `
+            attribute float ao;
+            attribute vec3 tintColor;
+            varying vec2 vUv;
+            varying float vAo;
+            varying vec3 vNormal;
+            varying vec3 vTint;
+            void main() {
+                vUv = uv;
+                vAo = ao;
+                vTint = tintColor;
+                vNormal = normalize(normalMatrix * normal);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+        const fragShader = `
+            uniform sampler2D atlasMap;
+            uniform float aoEnabled;
+            uniform vec3 fogColor;
+            uniform float fogNear;
+            uniform float fogFar;
+            varying vec2 vUv;
+            varying float vAo;
+            varying vec3 vNormal;
+            varying vec3 vTint;
+            void main() {
+                vec4 tex = texture2D(atlasMap, vUv);
+                if (tex.a < 0.1) discard;
+                float light = 1.0;
+                vec3 an = abs(vNormal);
+                if (an.y > 0.5) light = vNormal.y > 0.0 ? 1.0 : 0.5;
+                else if (an.z > 0.5) light = 0.8;
+                else light = 0.6;
+                light *= mix(1.0, vAo, aoEnabled);
+                vec3 col = tex.rgb * vTint * light;
+                float d = gl_FragCoord.z / gl_FragCoord.w;
+                col = mix(col, fogColor, smoothstep(fogNear, fogFar, d));
+                gl_FragColor = vec4(col, tex.a);
+            }
+        `;
+
+        let atlasMaterial = null, translucentMaterial = null;
+        function createAtlasMaterial() {
+            const tex = new THREE.CanvasTexture(atlasCanvas);
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            const sharedUniforms = {
+                atlasMap: { value: tex },
+                aoEnabled: { value: 1.0 },
+                fogColor: { value: new THREE.Color(0xC8DCF0) },
+                fogNear: { value: 80.0 },
+                fogFar: { value: 250.0 },
+            };
+            atlasMaterial = new THREE.ShaderMaterial({
+                uniforms: sharedUniforms,
+                vertexShader: vtxShader, fragmentShader: fragShader,
+                side: THREE.DoubleSide,
+                transparent: false,
+            });
+            // Separate material for translucent blocks (glass, water, ice)
+            translucentMaterial = new THREE.ShaderMaterial({
+                uniforms: sharedUniforms,
+                vertexShader: vtxShader, fragmentShader: fragShader,
+                side: THREE.DoubleSide,
+                transparent: true,
+                depthWrite: false,
+            });
+            return atlasMaterial;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // AO COMPUTATION (for full cubes only)
+        // ═══════════════════════════════════════════════════════════
+        function buildAOTable() {
+            const FACES = [
+                { dir: 'east',  corners: [[1,0,1],[1,1,1],[1,1,0],[1,0,0]] },
+                { dir: 'west',  corners: [[0,0,0],[0,1,0],[0,1,1],[0,0,1]] },
+                { dir: 'up',    corners: [[0,1,0],[0,1,1],[1,1,1],[1,1,0]] },
+                { dir: 'down',  corners: [[0,0,1],[0,0,0],[1,0,0],[1,0,1]] },
+                { dir: 'south', corners: [[0,0,1],[0,1,1],[1,1,1],[1,0,1]] },
+                { dir: 'north', corners: [[1,0,0],[1,1,0],[0,1,0],[0,0,0]] },
+            ];
+            const table = {};
+            for (const face of FACES) {
+                const d = FACE_DIRS[face.dir];
+                const cornerAO = [];
+                for (const corner of face.corners) {
+                    let s1, s2;
+                    if (Math.abs(d[0]) === 1) {
+                        s1 = [d[0], corner[1] === 0 ? -1 : 1, 0];
+                        s2 = [d[0], 0, corner[2] === 0 ? -1 : 1];
+                    } else if (Math.abs(d[1]) === 1) {
+                        s1 = [corner[0] === 0 ? -1 : 1, d[1], 0];
+                        s2 = [0, d[1], corner[2] === 0 ? -1 : 1];
+                    } else {
+                        s1 = [corner[0] === 0 ? -1 : 1, 0, d[2]];
+                        s2 = [0, corner[1] === 0 ? -1 : 1, d[2]];
+                    }
+                    cornerAO.push({ s1, s2, c: [s1[0]+s2[0]-d[0], s1[1]+s2[1]-d[1], s1[2]+s2[2]-d[2]] });
+                }
+                table[face.dir] = cornerAO;
+            }
+            return table;
+        }
+        const AO_TABLE = buildAOTable();
+
+        function computeAO(opaqueSet, x, y, z, faceName) {
+            const ao = AO_TABLE[faceName];
+            if (!ao) return [1, 1, 1, 1];
+            return ao.map(o => {
+                const s1 = opaqueSet.has(`${x+o.s1[0]},${y+o.s1[1]},${z+o.s1[2]}`) ? 1 : 0;
+                const s2 = opaqueSet.has(`${x+o.s2[0]},${y+o.s2[1]},${z+o.s2[2]}`) ? 1 : 0;
+                const c  = opaqueSet.has(`${x+o.c[0]},${y+o.c[1]},${z+o.c[2]}`) ? 1 : 0;
+                return ((s1 && s2) ? 0 : 3 - (s1 + s2 + c)) / 3;
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // MESH BUILDER — Uses model elements for actual 3D shapes
+        // ═══════════════════════════════════════════════════════════
+        let currentMesh = null, currentTranslucentMesh = null;
+
+        async function buildMesh(blocks) {
+            const progress = document.getElementById('loading-progress');
+            progress.textContent = 'Building voxel map...';
+
+            // Voxel lookup maps
+            const voxelMap = new Map(); // key → baseName
+            const opaqueSet = new Set();
+            for (const b of blocks) {
+                const bn = b.type.replace('minecraft:', '').split('[')[0];
+                if (SKIP_BLOCKS.has(bn)) continue;
+                const key = `${b.x},${b.y},${b.z}`;
+                voxelMap.set(key, bn);
+                if (isOpaqueFullCube(bn)) opaqueSet.add(key);
+            }
+
+            // Pre-resolve all unique block types
+            progress.textContent = 'Resolving block models...';
+            const uniqueBlocks = new Map(); // fullName → {baseName, props}
+            for (const b of blocks) {
+                const bn = b.type.replace('minecraft:', '').split('[')[0];
+                if (SKIP_BLOCKS.has(bn)) continue;
+                if (!uniqueBlocks.has(b.type)) {
+                    uniqueBlocks.set(b.type, parseBlockName(b.type));
+                }
+            }
+
+            let cnt = 0;
+            const total = uniqueBlocks.size;
+            for (const [fullName, { baseName, props }] of uniqueBlocks) {
+                await buildBlockQuads(baseName, props);
+                if (++cnt % 10 === 0) {
+                    progress.textContent = `Resolving models: ${cnt}/${total}`;
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            // Build geometry — separate opaque and translucent passes
+            progress.textContent = 'Generating mesh...';
+            await new Promise(r => setTimeout(r, 0));
+
+            // Opaque pass
+            const positions = [], normals = [], uvs = [], aoData = [], tintData = [], indices = [];
+            let vertexCount = 0, faceCount = 0;
+            // Translucent pass
+            const tPositions = [], tNormals = [], tUvs = [], tAoData = [], tTintData = [], tIndices = [];
+            let tVertexCount = 0;
+
+            let processed = 0;
+            const totalBlocks = blocks.length;
+
+            for (const b of blocks) {
+                const { baseName, props } = uniqueBlocks.get(b.type) || parseBlockName(b.type);
+                if (SKIP_BLOCKS.has(baseName)) continue;
+
+                const resolved = resolvedModels[
+                    baseName + '|' + Object.keys(props).sort().map(k => k + '=' + props[k]).join(',')
+                ] || { quads: [], isFullCube: false, isTranslucent: false };
+                const { quads, isFullCube, isTranslucent } = resolved;
+
+                const { x, y, z } = b;
+
+                // Get tint color for this block
+                const blockTint = getTintForBlock(baseName);
+
+                // Choose which buffers to write to
+                const isTransl = isTranslucent;
+                const p = isTransl ? tPositions : positions;
+                const n = isTransl ? tNormals : normals;
+                const u = isTransl ? tUvs : uvs;
+                const a = isTransl ? tAoData : aoData;
+                const t = isTransl ? tTintData : tintData;
+                const idx = isTransl ? tIndices : indices;
+                let vc = isTransl ? tVertexCount : vertexCount;
+
+                for (const quad of quads) {
+                    // Face culling: if cullface is set, check if neighbor is opaque full cube
+                    if (quad.cullface) {
+                        const d = FACE_DIRS[quad.cullface];
+                        if (d) {
+                            const nk = `${x + d[0]},${y + d[1]},${z + d[2]}`;
+                            const neighbor = voxelMap.get(nk);
+                            if (neighbor && isOpaqueFullCube(neighbor)) continue;
+                        }
+                    }
+
+                    // AO (only for full cubes)
+                    const ao = (isFullCube && quad.faceName) ?
+                        computeAO(opaqueSet, x, y, z, quad.faceName) : [1, 1, 1, 1];
+
+                    // Determine tint: apply block tint if the quad is tinted or the whole block is tinted
+                    let tint = [1, 1, 1];
+                    if (blockTint) {
+                        // For tinted quads (tintindex) or blocks that are entirely tinted (water, leaves)
+                        if (quad.tinted || WATER_TINTED_BLOCKS.has(baseName) || FOLIAGE_TINTED_BLOCKS.has(baseName)) {
+                            tint = blockTint;
+                        }
+                    }
+
+                    // Add 4 vertices
+                    for (let i = 0; i < 4; i++) {
+                        const v = quad.verts[i];
+                        p.push(x + v[0], y + v[1], z + v[2]);
+                        n.push(quad.normal[0], quad.normal[1], quad.normal[2]);
+                        u.push(quad.uvs[i][0], quad.uvs[i][1]);
+                        a.push(ao[i]);
+                        t.push(tint[0], tint[1], tint[2]);
+                    }
+
+                    // Indices with AO-aware quad flipping
+                    const base = vc;
+                    if (ao[0] + ao[2] > ao[1] + ao[3]) {
+                        idx.push(base, base+1, base+2, base, base+2, base+3);
+                    } else {
+                        idx.push(base+1, base+2, base+3, base+1, base+3, base);
+                    }
+                    vc += 4;
+                    faceCount++;
+                }
+
+                if (isTransl) tVertexCount = vc; else vertexCount = vc;
+
+                if (++processed % 5000 === 0) {
+                    progress.textContent = `Meshing: ${Math.round(processed/totalBlocks*100)}% (${faceCount.toLocaleString()} faces)`;
+                    await new Promise(r => setTimeout(r, 0));
+                }
+            }
+
+            progress.textContent = `Building GPU buffers (${faceCount.toLocaleString()} faces)...`;
+            await new Promise(r => setTimeout(r, 0));
+
+            function buildGeo(pos, norm, uv, ao, tint, idx) {
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+                geo.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
+                geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+                geo.setAttribute('ao', new THREE.Float32BufferAttribute(ao, 1));
+                geo.setAttribute('tintColor', new THREE.Float32BufferAttribute(tint, 3));
+                geo.setIndex(idx);
+                return geo;
+            }
+
+            const opaqueGeo = buildGeo(positions, normals, uvs, aoData, tintData, indices);
+            const translucentGeo = tVertexCount > 0 ? buildGeo(tPositions, tNormals, tUvs, tAoData, tTintData, tIndices) : null;
+            return { opaqueGeo, translucentGeo, faceCount, vertexCount: vertexCount + tVertexCount };
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // CONTROLS
+        // ═══════════════════════════════════════════════════════════
+        let isDragging = false, yaw = 0, pitch = 0, pointerLocked = false;
+        canvas.addEventListener('click', () => { if (!pointerLocked) canvas.requestPointerLock(); });
+        document.addEventListener('pointerlockchange', () => {
+            pointerLocked = document.pointerLockElement === canvas;
+            document.getElementById('crosshair').style.display = pointerLocked ? 'block' : 'none';
+        });
+        canvas.addEventListener('mousedown', e => { if (e.button === 2 || e.button === 0) isDragging = true; });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+        window.addEventListener('mousemove', e => {
+            if (!isDragging && !pointerLocked) return;
+            yaw -= e.movementX * 0.002;
+            pitch -= e.movementY * 0.002;
+            pitch = Math.max(-Math.PI/2+0.01, Math.min(Math.PI/2-0.01, pitch));
+            camera.rotation.set(pitch, yaw, 0, 'YXZ');
+        });
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const s = document.getElementById('speed-slider');
+            let v = parseFloat(s.value) + (e.deltaY > 0 ? -0.1 : 0.1);
+            v = Math.max(0.1, Math.min(3.0, v));
+            s.value = v.toFixed(1);
+            document.getElementById('speed-value').textContent = v.toFixed(1);
+        }, { passive: false });
+
+        const moveState = { w:false, a:false, s:false, d:false, space:false, shift:false };
+        window.addEventListener('keydown', e => {
+            const k = e.key.toLowerCase();
+            if (k === ' ') { moveState.space = true; e.preventDefault(); }
+            else if (k === 'shift') moveState.shift = true;
+            else if (k in moveState) moveState[k] = true;
+            if (k === 'escape' && pointerLocked) document.exitPointerLock();
+        });
+        window.addEventListener('keyup', e => {
+            const k = e.key.toLowerCase();
+            if (k === ' ') moveState.space = false;
+            else if (k === 'shift') moveState.shift = false;
+            else if (k in moveState) moveState[k] = false;
+        });
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        document.getElementById('ao-toggle').addEventListener('change', e => {
+            const v = e.target.checked ? 1.0 : 0.0;
+            if (atlasMaterial) atlasMaterial.uniforms.aoEnabled.value = v;
+            if (translucentMaterial) translucentMaterial.uniforms.aoEnabled.value = v;
+        });
+
+        // ═══════════════════════════════════════════════════════════
+        // MAIN LOAD PIPELINE
+        // ═══════════════════════════════════════════════════════════
+        let maxBuildY = 0, allBlocks = [];
+
+        async function loadLitematicaData(buffer) {
+            document.getElementById('loading').classList.remove('hide');
+            document.getElementById('loading-progress').textContent = 'Parsing NBT data...';
+            try {
+                const nbtData = await NBT.read(new Uint8Array(buffer));
+                const root = nbtData.data;
+                document.getElementById('build-name').textContent = root.Metadata?.Name || 'Litematica Build';
+                document.getElementById('build-desc').textContent = root.Metadata?.Description || 'Loaded successfully';
+
+                if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); currentMesh = null; }
+                if (currentTranslucentMesh) { scene.remove(currentTranslucentMesh); currentTranslucentMesh.geometry.dispose(); currentTranslucentMesh = null; }
+
+                const regions = root.Regions;
+                allBlocks = [];
+                for (const rn in regions) {
+                    const r = regions[rn];
+                    const sz = r.Size, pos = r.Position || {x:0,y:0,z:0};
+                    const palette = r.BlockStatePalette, states = r.BlockStates;
+                    const abs = { x: Math.abs(sz.x), y: Math.abs(sz.y), z: Math.abs(sz.z) };
+                    const tot = abs.x * abs.y * abs.z;
+                    let bi = [];
+                    if (states) {
+                        bi = unpackBlockStates(states, Math.max(4, Math.ceil(Math.log2(palette.length))), tot);
+                    } else if (palette.length === 1) {
+                        bi = new Int32Array(tot).fill(0);
+                    }
+                    let idx = 0;
+                    for (let y = 0; y < abs.y; y++)
+                        for (let z = 0; z < abs.z; z++)
+                            for (let x = 0; x < abs.x; x++) {
+                                const s = palette[bi[idx++]];
+                                if (!s) continue;
+                                // Reconstruct full name with properties
+                                let fullName = s.Name;
+                                if (s.Properties && Object.keys(s.Properties).length > 0) {
+                                    const propStr = Object.entries(s.Properties).map(([k,v]) => `${k}=${v}`).join(',');
+                                    fullName = `${s.Name}[${propStr}]`;
+                                }
+                                const bn = s.Name.replace('minecraft:','').split('[')[0];
+                                if (SKIP_BLOCKS.has(bn)) continue;
+                                allBlocks.push({
+                                    x: pos.x + (sz.x < 0 ? sz.x + 1 + x : x),
+                                    y: pos.y + (sz.y < 0 ? sz.y + 1 + y : y),
+                                    z: pos.z + (sz.z < 0 ? sz.z + 1 + z : z),
+                                    type: fullName
+                                });
+                            }
+                }
+
+                initAtlas();
+                const { opaqueGeo, translucentGeo, faceCount, vertexCount } = await buildMesh(allBlocks);
+                createAtlasMaterial();
+
+                currentMesh = new THREE.Mesh(opaqueGeo, atlasMaterial);
+                scene.add(currentMesh);
+                if (translucentGeo) {
+                    currentTranslucentMesh = new THREE.Mesh(translucentGeo, translucentMaterial);
+                    currentTranslucentMesh.renderOrder = 1; // render after opaque
+                    scene.add(currentTranslucentMesh);
+                }
+
+                let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+                for (const b of allBlocks) {
+                    if (b.x<minX)minX=b.x; if(b.x>maxX)maxX=b.x;
+                    if (b.y<minY)minY=b.y; if(b.y>maxY)maxY=b.y;
+                    if (b.z<minZ)minZ=b.z; if(b.z>maxZ)maxZ=b.z;
+                }
+                maxBuildY = maxY;
+                document.getElementById('block-count').textContent = allBlocks.length.toLocaleString();
+                document.getElementById('build-size').textContent = `${maxX-minX+1} × ${maxY-minY+1} × ${maxZ-minZ+1}`;
+                document.getElementById('face-count').textContent = faceCount.toLocaleString();
+                document.getElementById('vertex-count').textContent = vertexCount.toLocaleString();
+
+                const cx=(minX+maxX)/2, cy=(minY+maxY)/2, cz=(minZ+maxZ)/2;
+                const bsz = Math.max(maxX-minX, maxY-minY, maxZ-minZ);
+                camera.position.set(cx+bsz*0.7, cy+bsz*0.5, cz+bsz*0.9);
+                camera.lookAt(cx, cy, cz);
+                const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+                yaw = euler.y; pitch = euler.x;
+                grid.position.set(cx, minY-0.01, cz);
+
+                const sl = document.getElementById('layer-slider');
+                sl.min = minY; sl.max = maxY; sl.value = maxY;
+            } catch (e) {
+                console.error(e);
+                alert("Error: " + e.message + "\n" + e.stack);
+            } finally {
+                document.getElementById('loading').classList.add('hide');
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // LAYER SLICING
+        // ═══════════════════════════════════════════════════════════
+        const slider = document.getElementById('layer-slider');
+        const layerLabel = document.getElementById('layer-value');
+        let layerDebounce = null;
+        slider.addEventListener('input', () => {
+            const ml = parseInt(slider.value);
+            layerLabel.textContent = ml >= maxBuildY ? 'All' : `Y ≤ ${ml}`;
+            clearTimeout(layerDebounce);
+            layerDebounce = setTimeout(async () => {
+                if (!allBlocks.length || !atlasMaterial) return;
+                const toRender = ml >= maxBuildY ? allBlocks : allBlocks.filter(b => b.y <= ml);
+                if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); }
+                if (currentTranslucentMesh) { scene.remove(currentTranslucentMesh); currentTranslucentMesh.geometry.dispose(); currentTranslucentMesh = null; }
+                const { opaqueGeo, translucentGeo } = await buildMesh(toRender);
+                currentMesh = new THREE.Mesh(opaqueGeo, atlasMaterial);
+                scene.add(currentMesh);
+                if (translucentGeo) {
+                    currentTranslucentMesh = new THREE.Mesh(translucentGeo, translucentMaterial);
+                    currentTranslucentMesh.renderOrder = 1;
+                    scene.add(currentTranslucentMesh);
+                }
+            }, 300);
+        });
+
+        document.getElementById('speed-slider').addEventListener('input', function() {
+            document.getElementById('speed-value').textContent = parseFloat(this.value).toFixed(1);
+        });
+
+        document.getElementById('upload-file').addEventListener('change', e => {
+            const f = e.target.files[0]; if (!f) return;
+            const r = new FileReader();
+            r.onload = ev => loadLitematicaData(ev.target.result);
+            r.readAsArrayBuffer(f);
+        });
+
+        // ═══════════════════════════════════════════════════════════
+        // ANIMATION LOOP
+        // ═══════════════════════════════════════════════════════════
+        const fwd = new THREE.Vector3(), right = new THREE.Vector3();
+        let frameCount = 0, lastFps = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const spd = parseFloat(document.getElementById('speed-slider').value);
+            if (moveState.w||moveState.s||moveState.a||moveState.d||moveState.space||moveState.shift) {
+                camera.getWorldDirection(fwd);
+                right.crossVectors(fwd, camera.up).normalize();
+                if (moveState.w) camera.position.addScaledVector(fwd, spd);
+                if (moveState.s) camera.position.addScaledVector(fwd, -spd);
+                if (moveState.a) camera.position.addScaledVector(right, -spd);
+                if (moveState.d) camera.position.addScaledVector(right, spd);
+                if (moveState.space) camera.position.y += spd;
+                if (moveState.shift) camera.position.y -= spd;
+            }
+            renderer.render(scene, camera);
+            frameCount++;
+            const now = performance.now();
+            if (now - lastFps >= 1000) {
+                document.getElementById('fps-counter').textContent = frameCount;
+                document.getElementById('draw-calls').textContent = renderer.info.render.calls;
+                document.getElementById('tri-count').textContent = renderer.info.render.triangles.toLocaleString();
+                frameCount = 0; lastFps = now;
+            }
+        }
+        animate();
+
+        // ═══════════════════════════════════════════════════════════
+        // DEFAULT BUILD LOADER — uses agent_creation.js
+        // ═══════════════════════════════════════════════════════════
+        async function loadDefaultBuild() {
+            document.getElementById('loading').classList.remove('hide');
+            document.getElementById('loading-progress').textContent = 'Generating AI build...';
+            try {
+                const build = generateDefaultBuild();
+                allBlocks = build.blocks;
+
+                document.getElementById('build-name').textContent = build.name;
+                document.getElementById('build-desc').textContent = build.description;
+
+                if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); currentMesh = null; }
+                if (currentTranslucentMesh) { scene.remove(currentTranslucentMesh); currentTranslucentMesh.geometry.dispose(); currentTranslucentMesh = null; }
+
+                initAtlas();
+                const { opaqueGeo, translucentGeo, faceCount, vertexCount } = await buildMesh(allBlocks);
+                createAtlasMaterial();
+
+                currentMesh = new THREE.Mesh(opaqueGeo, atlasMaterial);
+                scene.add(currentMesh);
+                if (translucentGeo) {
+                    currentTranslucentMesh = new THREE.Mesh(translucentGeo, translucentMaterial);
+                    currentTranslucentMesh.renderOrder = 1;
+                    scene.add(currentTranslucentMesh);
+                }
+
+                let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+                for (const b of allBlocks) {
+                    if (b.x<minX)minX=b.x; if(b.x>maxX)maxX=b.x;
+                    if (b.y<minY)minY=b.y; if(b.y>maxY)maxY=b.y;
+                    if (b.z<minZ)minZ=b.z; if(b.z>maxZ)maxZ=b.z;
+                }
+                maxBuildY = maxY;
+                document.getElementById('block-count').textContent = allBlocks.length.toLocaleString();
+                document.getElementById('build-size').textContent = `${maxX-minX+1} × ${maxY-minY+1} × ${maxZ-minZ+1}`;
+                document.getElementById('face-count').textContent = faceCount.toLocaleString();
+                document.getElementById('vertex-count').textContent = vertexCount.toLocaleString();
+
+                const cx=(minX+maxX)/2, cy=(minY+maxY)/2, cz=(minZ+maxZ)/2;
+                const bsz = Math.max(maxX-minX, maxY-minY, maxZ-minZ);
+                camera.position.set(cx+bsz*0.7, cy+bsz*0.5, cz+bsz*0.9);
+                camera.lookAt(cx, cy, cz);
+                const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+                yaw = euler.y; pitch = euler.x;
+                grid.position.set(cx, minY-0.01, cz);
+
+                const sl = document.getElementById('layer-slider');
+                sl.min = minY; sl.max = maxY; sl.value = maxY;
+            } catch (e) {
+                console.error(e);
+            } finally {
+                document.getElementById('loading').classList.add('hide');
+            }
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const fileToLoad = urlParams.get('file');
+        if (fileToLoad) {
+            fetch(fileToLoad).then(r => r.arrayBuffer()).then(loadLitematicaData)
+                .catch(e => { console.error(e); document.getElementById('loading').classList.add('hide'); });
+        } else {
+            loadDefaultBuild();
+        }
+    </script>
+</body>
+</html>

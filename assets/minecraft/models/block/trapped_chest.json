@@ -1,0 +1,25 @@
+{
+  "textures": {
+    "north": "minecraft:block/trapped_chest_front",
+    "south": "minecraft:block/trapped_chest_back",
+    "east": "minecraft:block/trapped_chest_side",
+    "west": "minecraft:block/trapped_chest_left",
+    "up": "minecraft:block/trapped_chest_top",
+    "down": "minecraft:block/trapped_chest_bottom",
+    "particle": "minecraft:block/trapped_chest_front"
+  },
+  "elements": [
+    {
+      "from": [1, 0, 1],
+      "to": [15, 14, 15],
+      "faces": {
+        "down":  { "texture": "#down",  "cullface": "down" },
+        "up":    { "texture": "#up" },
+        "north": { "texture": "#north", "rotation": 180 },
+        "south": { "texture": "#south", "rotation": 180 },
+        "west":  { "texture": "#west",  "rotation": 180 },
+        "east":  { "texture": "#east",  "rotation": 180 }
+      }
+    }
+  ]
+}
