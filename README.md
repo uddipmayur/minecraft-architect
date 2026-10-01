@@ -45,7 +45,7 @@ npm install
 npx serve@latest .
 ```
 
-Open `http://localhost:3000` (or `:8080`) in your browser.
+Open `http://localhost:3000` in your browser.
 
 ### 4. Start building with your AI agent
 
