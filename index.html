@@ -1095,11 +1095,10 @@
             return [x + 8, y + 8, z + 8];
         }
 
+        // Forward rotation: which output face does an input face map to
         function rotateFaceName(faceName, rx, ry) {
-            const faceOrder = { east: 0, south: 1, west: 2, north: 3 };
-            const vertOrder = { up: 0, south: 1, down: 2, north: 3 }; // for X rotation
             let name = faceName;
-            // Y rotation
+            // Y rotation (CW from above)
             if (ry && (name === 'north' || name === 'south' || name === 'east' || name === 'west')) {
                 const horiz = ['east', 'south', 'west', 'north'];
                 const idx = horiz.indexOf(name);
@@ -1114,8 +1113,26 @@
             return name;
         }
 
-        // Generate quads from model elements
-        // Returns: { quads: [{verts, normal, texIdx, uvs, cullface}], isFullCube }
+        // Inverse rotation: which input (model) face maps to a given output face
+        // i.e., if we want to know what texture to show on the output 'east' face
+        // after a Y=90 rotation, the answer is the model's 'north' face
+        function inverseRotateFaceName(outputFace, rx, ry) {
+            let name = outputFace;
+            // Undo X rotation first (reverse order)
+            if (rx && (name === 'up' || name === 'down' || name === 'north' || name === 'south')) {
+                const vert = ['up', 'south', 'down', 'north'];
+                const idx = vert.indexOf(name);
+                name = vert[(idx + (4 - rx / 90) % 4) % 4];
+            }
+            // Undo Y rotation
+            if (ry && (name === 'north' || name === 'south' || name === 'east' || name === 'west')) {
+                const horiz = ['east', 'south', 'west', 'north'];
+                const idx = horiz.indexOf(name);
+                name = horiz[(idx + (4 - ry / 90) % 4) % 4];
+            }
+            return name;
+        }
+
         // ═══════════════════════════════════════════════════════════
         // BIOME TINTING — Apply green tint to grass/leaves/vines
         // ═══════════════════════════════════════════════════════════
@@ -1189,6 +1206,7 @@
             const modelRef = variant?.model || `minecraft:block/${baseName}`;
             const rotX = variant?.x || 0;
             const rotY = variant?.y || 0;
+            const uvlock = variant?.uvlock || false;
 
             // Resolve model chain
             const model = await resolveModelChain(modelRef.replace('minecraft:', ''));
@@ -1232,7 +1250,7 @@
             const quads = [];
             let isFullCube = false;
 
-            // Check if this is a standard full cube
+            // Check if this is a standard full cube (only when no rotation)
             if (elements.length === 1) {
                 const e = elements[0];
                 if (e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 &&
@@ -1241,6 +1259,8 @@
                     isFullCube = true;
                 }
             }
+
+            const hasRotation = rotX !== 0 || rotY !== 0;
 
             for (const elem of elements) {
                 const [fx, fy, fz] = elem.from;
@@ -1252,13 +1272,27 @@
                     [fx, fy, tz], [tx, fy, tz], [tx, ty, tz], [fx, ty, tz],
                 ];
 
-                // Apply rotation
+                // Apply blockstate rotation to vertices
                 const corners = rawCorners.map(([px, py, pz]) => {
                     const [rx, ry, rz] = rotatePoint(px, py, pz, rotX, rotY);
                     return [rx / 16, ry / 16, rz / 16]; // Convert to 0-1 block space
                 });
 
-                // Face definitions: corner indices (CCW winding from outside for Three.js) + default UVs
+                // Compute the rotated element bounding box (for correct UV computation)
+                // Since rotations are 90° increments, the rotated box is still axis-aligned
+                let rfx = Infinity, rfy = Infinity, rfz = Infinity;
+                let rtx = -Infinity, rty = -Infinity, rtz = -Infinity;
+                if (hasRotation) {
+                    for (const c of rawCorners) {
+                        const [rx, ry, rz] = rotatePoint(c[0], c[1], c[2], rotX, rotY);
+                        rfx = Math.min(rfx, rx); rfy = Math.min(rfy, ry); rfz = Math.min(rfz, rz);
+                        rtx = Math.max(rtx, rx); rty = Math.max(rty, ry); rtz = Math.max(rtz, rz);
+                    }
+                }
+
+                // Face definitions: corner indices + default UVs
+                // The corner indices define the quad vertices for each face of
+                // the ORIGINAL (pre-rotation) element box.
                 const faceDefs = {
                     down:  { ci: [0, 4, 5, 1], defUV: [fx, fz, tx, tz] },
                     up:    { ci: [7, 3, 2, 6], defUV: [fx, fz, tx, tz] },
@@ -1268,47 +1302,112 @@
                     east:  { ci: [1, 5, 6, 2], defUV: [16-tz, 16-ty, 16-fz, 16-fy] },
                 };
 
-                for (const [faceName, def] of Object.entries(faceDefs)) {
-                    const faceData = elem.faces?.[faceName];
-                    if (!faceData) continue;
+                // When blockstate rotation is applied, we use a face-remapping
+                // approach: iterate over OUTPUT faces and look up texture data
+                // from the SOURCE (inverse-rotated) face. This ensures UVs are
+                // computed relative to the correct viewing direction.
 
-                    const texIdx = await resolveFaceTex(faceData);
-                    const uv = faceData.uv || def.defUV;
-                    const { u0, v0, u1, v1 } = getAtlasUV(texIdx, uv[0], uv[1], uv[2], uv[3]);
+                if (hasRotation) {
+                    // ── Rotation path: iterate over OUTPUT faces ──
+                    // Build new corners from the ROTATED bounding box, so
+                    // corner indices in faceDefs select the correct output-face
+                    // vertices for the axis-aligned rotated element.
+                    const rc = [
+                        [rfx/16, rfy/16, rfz/16], [rtx/16, rfy/16, rfz/16],
+                        [rtx/16, rty/16, rfz/16], [rfx/16, rty/16, rfz/16],
+                        [rfx/16, rfy/16, rtz/16], [rtx/16, rfy/16, rtz/16],
+                        [rtx/16, rty/16, rtz/16], [rfx/16, rty/16, rtz/16],
+                    ];
 
-                    // Get rotated face name for cullface
-                    let cullface = faceData.cullface || null;
-                    if (cullface && (rotX || rotY)) {
-                        cullface = rotateFaceName(cullface, rotX, rotY);
-                    }
+                    // Face defs for the rotated bounding box (same index scheme,
+                    // but positions and UVs are relative to the rotated AABB)
+                    const rDefs = {
+                        down:  { ci: [0, 4, 5, 1], defUV: [rfx, rfz, rtx, rtz] },
+                        up:    { ci: [7, 3, 2, 6], defUV: [rfx, rfz, rtx, rtz] },
+                        north: { ci: [0, 1, 2, 3], defUV: [16-rtx, 16-rty, 16-rfx, 16-rfy] },
+                        south: { ci: [5, 4, 7, 6], defUV: [rfx, 16-rty, rtx, 16-rfy] },
+                        west:  { ci: [4, 0, 3, 7], defUV: [rfz, 16-rty, rtz, 16-rfy] },
+                        east:  { ci: [1, 5, 6, 2], defUV: [16-rtz, 16-rty, 16-rfz, 16-rfy] },
+                    };
 
-                    // Rotated face normal direction
-                    const rotatedFace = (rotX || rotY) ? rotateFaceName(faceName, rotX, rotY) : faceName;
+                    const outputFaces = ['down', 'up', 'north', 'south', 'west', 'east'];
+                    for (const outputFace of outputFaces) {
+                        // Which model face's data should appear on this output face?
+                        const sourceFace = inverseRotateFaceName(outputFace, rotX, rotY);
+                        const faceData = elem.faces?.[sourceFace];
+                        if (!faceData) continue;
 
-                    const v = def.ci.map(i => corners[i]);
-                    const n = FACE_DIRS[rotatedFace] || FACE_DIRS[faceName] || [0, 1, 0];
+                        const texIdx = await resolveFaceTex(faceData);
+                        const outDef = rDefs[outputFace];
 
-                    // Check for tintindex on the face
-                    const hasTint = faceData.tintindex !== undefined;
+                        // For UVs: if the face data has explicit UVs, use them;
+                        // otherwise compute from the rotated bounding box
+                        const uv = faceData.uv || outDef.defUV;
+                        const { u0, v0, u1, v1 } = getAtlasUV(texIdx, uv[0], uv[1], uv[2], uv[3]);
 
-                    // Apply face texture rotation (0, 90, 180, 270)
-                    let faceUVs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
-                    const faceRot = faceData.rotation || 0;
-                    if (faceRot) {
-                        const steps = (faceRot / 90) % 4;
-                        for (let s = 0; s < steps; s++) {
-                            faceUVs = [faceUVs[1], faceUVs[2], faceUVs[3], faceUVs[0]];
+                        // Cullface: rotate from model space to output space
+                        let cullface = faceData.cullface ? rotateFaceName(faceData.cullface, rotX, rotY) : null;
+
+                        // Build vertices from the rotated AABB corners
+                        const v = outDef.ci.map(i => rc[i]);
+                        const n = FACE_DIRS[outputFace] || [0, 1, 0];
+
+                        const hasTint = faceData.tintindex !== undefined;
+
+                        // Apply face texture rotation (from model JSON, not blockstate)
+                        let faceUVs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
+                        const faceRot = faceData.rotation || 0;
+                        if (faceRot) {
+                            const steps = (faceRot / 90) % 4;
+                            for (let s = 0; s < steps; s++) {
+                                faceUVs = [faceUVs[1], faceUVs[2], faceUVs[3], faceUVs[0]];
+                            }
                         }
-                    }
 
-                    quads.push({
-                        verts: v,
-                        normal: n,
-                        uvs: faceUVs,
-                        cullface: cullface,
-                        faceName: rotatedFace,
-                        tinted: hasTint,
-                    });
+                        quads.push({
+                            verts: v,
+                            normal: n,
+                            uvs: faceUVs,
+                            cullface: cullface,
+                            faceName: outputFace,
+                            tinted: hasTint,
+                        });
+                    }
+                } else {
+                    // ── No rotation path: original behavior ──
+                    for (const [faceName, def] of Object.entries(faceDefs)) {
+                        const faceData = elem.faces?.[faceName];
+                        if (!faceData) continue;
+
+                        const texIdx = await resolveFaceTex(faceData);
+                        const uv = faceData.uv || def.defUV;
+                        const { u0, v0, u1, v1 } = getAtlasUV(texIdx, uv[0], uv[1], uv[2], uv[3]);
+
+                        let cullface = faceData.cullface || null;
+
+                        const v = def.ci.map(i => corners[i]);
+                        const n = FACE_DIRS[faceName] || [0, 1, 0];
+
+                        const hasTint = faceData.tintindex !== undefined;
+
+                        let faceUVs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
+                        const faceRot = faceData.rotation || 0;
+                        if (faceRot) {
+                            const steps = (faceRot / 90) % 4;
+                            for (let s = 0; s < steps; s++) {
+                                faceUVs = [faceUVs[1], faceUVs[2], faceUVs[3], faceUVs[0]];
+                            }
+                        }
+
+                        quads.push({
+                            verts: v,
+                            normal: n,
+                            uvs: faceUVs,
+                            cullface: cullface,
+                            faceName: faceName,
+                            tinted: hasTint,
+                        });
+                    }
                 }
             }
 
