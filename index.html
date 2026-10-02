@@ -4,69 +4,792 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Litematica Viewer | Minecraft Architect</title>
+    <title>Minecraft Architect | 3D Litematica Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&family=VT323&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        body { background: #0d0a0e; color: #e6d5c3; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
-        canvas { display: block; }
-        .panel { position: absolute; z-index: 10; background: rgba(20, 10, 15, 0.88); backdrop-filter: blur(12px); border: 1px solid rgba(255, 100, 50, 0.15); border-radius: 12px; padding: 14px 18px; font-size: 13px; }
-        #info { top: 16px; left: 16px; max-width: 310px; }
-        #info h1 { font-size: 22px; margin-bottom: 4px; background: linear-gradient(90deg, #ff6a33, #ff3333, #cc33ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800; }
-        #info .subtitle { font-size: 11px; color: #8a7a70; margin-bottom: 10px; }
-        .stat { color: #a09080; margin: 3px 0; }
-        .stat span { color: #ff8855; font-weight: 600; }
-        .controls-hint { margin-top: 10px; font-size: 11px; color: #6a5a50; line-height: 1.7; }
-        #tools { top: 16px; left: 340px; width: 260px; }
-        #tools h3 { font-size: 13px; color: #ff8855; margin-bottom: 8px; }
-        .btn { display: inline-block; background: rgba(255, 100, 50, 0.1); border: 1px solid rgba(255, 100, 50, 0.3); color: #ff8855; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; cursor: pointer; transition: 0.2s; margin-top: 8px; width: 100%; text-align: center; }
-        .btn:hover { background: rgba(255, 100, 50, 0.2); }
-        input[type=file] { font-size: 11px; color: #aaa; width: 100%; }
-        #layer-control { top: 16px; right: 16px; }
-        #layer-control label { font-size: 13px; color: #a09080; }
-        #layer-control label span { color: #ff8855; font-weight: 600; }
-        #layer-slider { width: 180px; margin-top: 6px; accent-color: #ff6a33; display: block; }
-        #render-stats { position: absolute; bottom: 16px; left: 16px; z-index: 10; background: rgba(20, 10, 15, 0.75); backdrop-filter: blur(8px); border: 1px solid rgba(255, 100, 50, 0.1); border-radius: 8px; padding: 8px 14px; font-size: 11px; color: #6a5a50; }
-        #render-stats span { color: #ff8855; }
-        #loading { position: fixed; inset: 0; z-index: 999; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0d0a0e; font-size: 18px; color: #ff6a33; transition: opacity 0.6s; }
-        #loading.hide { opacity: 0; pointer-events: none; }
-        #loading-progress { margin-top: 12px; font-size: 12px; color: #8a7a70; }
-        .crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 20px; height: 20px; z-index: 15; pointer-events: none; opacity: 0.4; }
-        .crosshair::before, .crosshair::after { content: ''; position: absolute; background: #fff; }
-        .crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
-        .crosshair::after { width: 100%; height: 2px; top: 50%; transform: translateY(-50%); }
+        body {
+            background: #111015;
+            color: #FFFFFF;
+            font-family: 'Silkscreen', monospace;
+            overflow: hidden;
+            image-rendering: pixelated;
+            user-select: none;
+        }
+        canvas#viewport {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* ── Minecraft Beveled Panels ── */
+        .panel {
+            position: absolute;
+            z-index: 10;
+            background: rgba(20, 20, 26, 0.94);
+            border: 3px solid #000000;
+            box-shadow: 
+                inset 3px 3px 0 0 rgba(255, 255, 255, 0.25),
+                inset -3px -3px 0 0 rgba(0, 0, 0, 0.7),
+                0 8px 16px rgba(0, 0, 0, 0.65);
+            padding: 12px 14px;
+            font-size: 11px;
+            image-rendering: pixelated;
+            backdrop-filter: blur(8px);
+            transition: max-height 0.2s ease;
+        }
+        #info {
+            top: 16px;
+            left: 16px;
+            width: 330px;
+            max-width: calc(100vw - 32px);
+        }
+        #tools {
+            top: 16px;
+            left: 360px;
+            width: 300px;
+            max-width: calc(100vw - 32px);
+        }
+        #layer-control {
+            top: 16px;
+            right: 16px;
+            width: 275px;
+            max-width: calc(100vw - 32px);
+        }
+
+        /* Responsive Panel Repositioning */
+        @media (max-width: 980px) {
+            #tools {
+                top: auto;
+                bottom: 50px;
+                left: 16px;
+                width: 320px;
+            }
+        }
+        @media (max-width: 660px) {
+            #info, #tools, #layer-control {
+                position: relative;
+                top: auto !important;
+                left: auto !important;
+                right: auto !important;
+                bottom: auto !important;
+                width: 100% !important;
+                margin-bottom: 10px;
+            }
+        }
+
+        /* Panel Header & Minimize */
+        .mc-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #2e2e38;
+        }
+        .mc-header-title {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9.5px;
+            color: #FFAA00;
+            text-shadow: 2px 2px 0 #3F2A00;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .mc-panel-toggle {
+            width: 20px;
+            height: 20px;
+            background: #4e4e58;
+            color: #FFFFFF;
+            border: 2px solid #000000;
+            box-shadow: inset 1px 1px 0 #858596, inset -1px -1px 0 #202028;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            outline: none;
+            padding: 0;
+            line-height: 1;
+        }
+        .mc-panel-toggle:hover {
+            background: #606070;
+            color: #FFFF55;
+        }
+        .mc-panel-toggle:active {
+            box-shadow: inset -1px -1px 0 #858596, inset 1px 1px 0 #202028;
+            transform: translateY(1px);
+        }
+        .panel.collapsed .mc-panel-content {
+            display: none;
+        }
+        .panel.collapsed {
+            padding-bottom: 6px;
+        }
+
+        /* Build Title & Description */
+        #build-name {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #FFFFFF;
+            text-shadow: 2px 2px 0 #000000;
+            margin-bottom: 6px;
+            word-break: break-word;
+        }
+        #build-desc {
+            font-size: 11px;
+            color: #AAAAAA;
+            line-height: 1.5;
+            text-shadow: 1px 1px 0 #000000;
+            margin-bottom: 12px;
+        }
+
+        /* ── Minecraft Item Slot Stats Grid ── */
+        .mc-stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .mc-stat-item {
+            background: #101014;
+            border: 2px solid #000000;
+            box-shadow: inset 2px 2px 0 #060608, inset -2px -2px 0 #2c2c36;
+            padding: 6px 8px;
+            display: flex;
+            flex-direction: column;
+        }
+        .mc-stat-label {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 7px;
+            color: #7e7e8c;
+            text-shadow: 1px 1px 0 #000000;
+            margin-bottom: 4px;
+        }
+        .mc-stat-value {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .stat-gold { color: #FFAA00; text-shadow: 2px 2px 0 #3F2A00; }
+        .stat-aqua { color: #55FFFF; text-shadow: 2px 2px 0 #153F3F; }
+        .stat-green { color: #55FF55; text-shadow: 2px 2px 0 #153F15; }
+        .stat-purple { color: #FF55FF; text-shadow: 2px 2px 0 #3F153F; }
+
+        /* ── Minecraft Controls Guide ── */
+        .controls-hint {
+            background: rgba(10, 10, 14, 0.75);
+            border: 2px solid #000000;
+            box-shadow: inset 1px 1px 0 #282830;
+            padding: 8px 10px;
+            font-size: 10.5px;
+        }
+        .hint-header {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 7.5px;
+            color: #FFAA00;
+            text-shadow: 1px 1px 0 #3F2A00;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+        .hint-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 4px 0;
+            font-size: 10.5px;
+        }
+        .mc-key {
+            background: #24242c;
+            color: #FFFF55;
+            border: 1px solid #000000;
+            box-shadow: inset 1px 1px 0 #525260, inset -1px -1px 0 #121216;
+            padding: 1px 5px;
+            font-family: 'VT323', monospace;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+            text-shadow: 1px 1px 0 #000000;
+            white-space: nowrap;
+        }
+        .hint-desc {
+            color: #AAAAAA;
+            text-shadow: 1px 1px 0 #000000;
+        }
+
+        /* ── Minecraft Buttons & Icons ── */
+        .mc-icon {
+            display: inline-block;
+            vertical-align: -2px;
+            image-rendering: pixelated;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: #6e6e6e;
+            color: #e2e2e2;
+            border: 2px solid #000000;
+            box-shadow: 
+                inset 2px 2px 0 0 #ffffff,
+                inset -2px -2px 0 0 #373737;
+            padding: 8px 10px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;
+            line-height: 1.4;
+            letter-spacing: 0.3px;
+            text-decoration: none;
+            text-shadow: 2px 2px 0 #222222;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.1s, color 0.1s;
+            outline: none;
+            border-radius: 0;
+            margin-top: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .btn:hover:not(:disabled) {
+            background: #526c96;
+            color: #FFFF55;
+            text-shadow: 2px 2px 0 #3F3F15;
+            box-shadow: 
+                inset 2px 2px 0 0 #8da4cb,
+                inset -2px -2px 0 0 #24354f,
+                0 0 10px rgba(82, 108, 150, 0.45);
+        }
+        .btn:active:not(:disabled) {
+            background: #444444;
+            box-shadow: 
+                inset -2px -2px 0 0 #888888,
+                inset 2px 2px 0 0 #181818;
+            transform: translateY(1px);
+        }
+        .btn:disabled {
+            background: #3f3f3f;
+            color: #7b7b7b;
+            text-shadow: 1px 1px 0 #151515;
+            box-shadow: 
+                inset 2px 2px 0 0 #555555,
+                inset -2px -2px 0 0 #252525;
+            cursor: wait;
+            opacity: 0.85;
+        }
+
+        #download-btn {
+            background: #2b6e30;
+            color: #e5ffe8;
+            text-shadow: 2px 2px 0 #113614;
+            box-shadow: 
+                inset 2px 2px 0 0 #5ae462,
+                inset -2px -2px 0 0 #15451a;
+            margin-top: 8px;
+            font-size: 8.5px;
+            line-height: 1.45;
+            padding: 9px 8px;
+            word-break: break-word;
+        }
+        #download-btn:hover:not(:disabled) {
+            background: #398c3f;
+            color: #FFFF55;
+            text-shadow: 2px 2px 0 #3F3F15;
+            box-shadow: 
+                inset 2px 2px 0 0 #7afc81,
+                inset -2px -2px 0 0 #1e5e24,
+                0 0 12px rgba(90, 228, 98, 0.45);
+        }
+        #download-btn:active:not(:disabled) {
+            background: #1c5021;
+            box-shadow: 
+                inset -2px -2px 0 0 #5ae462,
+                inset 2px 2px 0 0 #113614;
+            transform: translateY(1px);
+        }
+
+        /* ── Tools Section ── */
+        .mc-section-label {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 7.5px;
+            color: #888892;
+            text-shadow: 1px 1px 0 #000000;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+        .mc-file-picker {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        #upload-file {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+        }
+        .file-select-label {
+            margin-top: 0;
+        }
+        #file-name-display {
+            background: #0f0f13;
+            border: 2px solid #000000;
+            box-shadow: inset 2px 2px 0 #000000, inset -1px -1px 0 #282830;
+            padding: 6px 8px;
+            font-size: 10px;
+            color: #888892;
+            text-shadow: 1px 1px 0 #000000;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ── Sliders & Controls ── */
+        .mc-control-group {
+            margin-bottom: 12px;
+        }
+        .mc-control-group:last-child {
+            margin-bottom: 0;
+        }
+        .mc-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #AAAAAA;
+            text-shadow: 1px 1px 0 #000000;
+            margin-bottom: 4px;
+        }
+        .mc-label-row label {
+            cursor: pointer;
+        }
+        .mc-slider-val {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;
+        }
+        .val-gold { color: #FFAA00; text-shadow: 1px 1px 0 #3F2A00; }
+        .val-aqua { color: #55FFFF; text-shadow: 1px 1px 0 #153F3F; }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 16px;
+            background: #000000;
+            border: 2px solid #373737;
+            box-shadow: inset 2px 2px 0 #111111, inset -2px -2px 0 #222222;
+            outline: none;
+            border-radius: 0;
+            cursor: pointer;
+            display: block;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 24px;
+            background: #6e6e6e;
+            border: 2px solid #000000;
+            box-shadow: 
+                inset 2px 2px 0 #ffffff,
+                inset -2px -2px 0 #373737;
+            border-radius: 0;
+            cursor: grab;
+            transition: background 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            background: #526c96;
+            box-shadow: 
+                inset 2px 2px 0 #8da4cb,
+                inset -2px -2px 0 #24354f;
+        }
+        input[type=range]::-webkit-slider-thumb:active {
+            background: #444444;
+            cursor: grabbing;
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 14px;
+            height: 24px;
+            background: #6e6e6e;
+            border: 2px solid #000000;
+            box-shadow: 
+                inset 2px 2px 0 #ffffff,
+                inset -2px -2px 0 #373737;
+            border-radius: 0;
+            cursor: grab;
+        }
+
+        .mc-checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: #FFFFFF;
+            text-shadow: 1px 1px 0 #000000;
+            cursor: pointer;
+            user-select: none;
+        }
+        .mc-checkbox-label input[type="checkbox"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #111116;
+            border: 2px solid #000000;
+            box-shadow: inset 2px 2px 0 #050508, inset -2px -2px 0 #32323a;
+            border-radius: 0;
+            cursor: pointer;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .mc-checkbox-label input[type="checkbox"]:hover {
+            background: #1c1c24;
+        }
+        .mc-checkbox-label input[type="checkbox"]:checked {
+            background: #183818;
+        }
+        .mc-checkbox-label input[type="checkbox"]:checked::after {
+            content: "✔";
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;
+            color: #55FF55;
+            text-shadow: 1px 1px 0 #153F15;
+        }
+
+        /* ── Minecraft F3 Debug Stats Bar ── */
+        #render-stats {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.78);
+            border: 2px solid #000000;
+            box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.15), inset -1px -1px 0 rgba(0, 0, 0, 0.8);
+            padding: 6px 12px;
+            font-family: 'VT323', monospace;
+            font-size: 16px;
+            color: #e2e2e2;
+            text-shadow: 1px 1px 0 #000000;
+            letter-spacing: 0.5px;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #render-stats .f3-badge {
+            color: #FFFF55;
+            font-weight: bold;
+            text-shadow: 1px 1px 0 #3F3F15;
+        }
+        #render-stats .f3-sep {
+            color: #555560;
+        }
+        #render-stats span span {
+            color: #55FFFF;
+            font-weight: bold;
+        }
+
+        /* ── Minecraft Crosshair ── */
+        .crosshair {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 15px;
+            height: 15px;
+            z-index: 15;
+            pointer-events: none;
+            mix-blend-mode: difference;
+        }
+        .crosshair::before {
+            content: '';
+            position: absolute;
+            width: 1px;
+            height: 15px;
+            left: 7px;
+            top: 0;
+            background: #ffffff;
+        }
+        .crosshair::after {
+            content: '';
+            position: absolute;
+            width: 15px;
+            height: 1px;
+            left: 0;
+            top: 7px;
+            background: #ffffff;
+        }
+
+        /* ── Minecraft Loading Screen ── */
+        #loading {
+            position: fixed;
+            inset: 0;
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #14100c url('assets/minecraft/textures/block/dirt.png') repeat;
+            background-size: 64px 64px;
+            image-rendering: pixelated;
+            transition: opacity 0.5s ease-out;
+        }
+        #loading::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(16, 12, 10, 0.6) 0%, rgba(5, 4, 3, 0.94) 100%);
+            pointer-events: none;
+        }
+        #loading.hide {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .mc-splash-box {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 24px;
+            max-width: 90vw;
+        }
+        .mc-title-3d {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 20px;
+            color: #FFAA00;
+            text-shadow: 3px 3px 0 #3F2A00, 5px 5px 0 #000000;
+            letter-spacing: 2px;
+            margin-bottom: 6px;
+        }
+        .mc-subtitle-3d {
+            font-size: 12px;
+            color: #AAAAAA;
+            text-shadow: 2px 2px 0 #000000;
+            letter-spacing: 1px;
+            margin-bottom: 24px;
+        }
+        .mc-xp-bar-outer {
+            width: 300px;
+            max-width: 80vw;
+            height: 14px;
+            background: #000000;
+            border: 2px solid #454550;
+            box-shadow: inset 2px 2px 0 #000000, inset -2px -2px 0 #202028;
+            position: relative;
+            overflow: hidden;
+        }
+        .mc-xp-bar-inner {
+            height: 100%;
+            width: 100%;
+            background: repeating-linear-gradient(
+                -45deg,
+                #55FF55,
+                #55FF55 10px,
+                #3ebb3e 10px,
+                #3ebb3e 20px
+            );
+            box-shadow: 0 0 10px rgba(85, 255, 85, 0.6);
+            animation: mcXpScroll 1.2s linear infinite;
+        }
+        @keyframes mcXpScroll {
+            0% { background-position: 0 0; }
+            100% { background-position: 28px 0; }
+        }
+        #loading-progress {
+            margin-top: 14px;
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            color: #FFFFFF;
+            text-shadow: 2px 2px 0 #000000;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 
 <body>
-    <div id="loading">⚡ Loading Litematica…<div id="loading-progress"></div></div>
+    <!-- Minecraft Splash / Loading Screen -->
+    <div id="loading">
+        <div class="mc-splash-box">
+            <div class="mc-title-3d">MINECRAFT ARCHITECT</div>
+            <div class="mc-subtitle-3d">LITEMATICA 3D ENGINE</div>
+            <div class="mc-xp-bar-outer">
+                <div class="mc-xp-bar-inner"></div>
+            </div>
+            <div id="loading-progress">Initializing 3D World...</div>
+        </div>
+    </div>
+
+    <!-- Schematic Info Panel -->
     <div class="panel" id="info">
-        <h1 id="build-name">No Schematic Loaded</h1>
-        <div class="subtitle" id="build-desc">Litematica Viewer</div>
-        <div class="stat">Blocks: <span id="block-count">—</span></div>
-        <div class="stat">Dimensions: <span id="build-size">—</span></div>
-        <div class="stat">Faces: <span id="face-count">—</span></div>
-        <div class="stat">Vertices: <span id="vertex-count">—</span></div>
-        <div class="controls-hint">🖱 Right-click drag to look | WASD to fly<br>Space/Shift for up/down | Scroll for speed</div>
+        <div class="mc-panel-header">
+            <span class="mc-header-title">
+                <svg class="mc-icon" viewBox="0 0 16 16" width="14" height="14">
+                    <rect x="2" y="13" width="2" height="2" fill="#604020"/>
+                    <rect x="4" y="11" width="2" height="2" fill="#785232"/>
+                    <rect x="6" y="9" width="2" height="2" fill="#785232"/>
+                    <rect x="8" y="7" width="2" height="2" fill="#785232"/>
+                    <rect x="10" y="5" width="2" height="2" fill="#785232"/>
+                    <rect x="7" y="2" width="3" height="2" fill="#55FFFF"/>
+                    <rect x="9" y="1" width="5" height="2" fill="#55FFFF"/>
+                    <rect x="13" y="3" width="2" height="4" fill="#55FFFF"/>
+                    <rect x="11" y="3" width="2" height="2" fill="#2C9C9C"/>
+                    <rect x="5" y="4" width="2" height="2" fill="#2C9C9C"/>
+                </svg>
+                SCHEMATIC INFO
+            </span>
+            <button type="button" class="mc-panel-toggle" aria-label="Toggle panel" onclick="const p=this.closest('.panel');p.classList.toggle('collapsed');this.textContent=p.classList.contains('collapsed')?'+':'—';">—</button>
+        </div>
+        <div class="mc-panel-content">
+            <h1 id="build-name">No Schematic Loaded</h1>
+            <div class="subtitle" id="build-desc">Litematica Viewer</div>
+
+            <div class="mc-stats-grid">
+                <div class="mc-stat-item">
+                    <span class="mc-stat-label">BLOCKS</span>
+                    <span class="mc-stat-value stat-gold" id="block-count">—</span>
+                </div>
+                <div class="mc-stat-item">
+                    <span class="mc-stat-label">SIZE</span>
+                    <span class="mc-stat-value stat-aqua" id="build-size">—</span>
+                </div>
+                <div class="mc-stat-item">
+                    <span class="mc-stat-label">FACES</span>
+                    <span class="mc-stat-value stat-green" id="face-count">—</span>
+                </div>
+                <div class="mc-stat-item">
+                    <span class="mc-stat-label">VERTICES</span>
+                    <span class="mc-stat-value stat-purple" id="vertex-count">—</span>
+                </div>
+            </div>
+
+            <div class="controls-hint">
+                <div class="hint-header">
+                    <svg class="mc-icon" viewBox="0 0 16 16" width="11" height="11">
+                        <rect x="2" y="1" width="12" height="14" fill="#EAD9A6"/>
+                        <rect x="3" y="2" width="10" height="12" fill="#F8EBC6"/>
+                        <rect x="4" y="4" width="8" height="1" fill="#7E6842"/>
+                        <rect x="4" y="6" width="8" height="1" fill="#7E6842"/>
+                        <rect x="4" y="8" width="6" height="1" fill="#7E6842"/>
+                        <rect x="4" y="10" width="7" height="1" fill="#7E6842"/>
+                    </svg>
+                    CONTROLS GUIDE
+                </div>
+                <div class="hint-row"><span class="mc-key">R-CLICK + DRAG</span> <span class="hint-desc">Look around</span></div>
+                <div class="hint-row"><span class="mc-key">W A S D</span> <span class="hint-desc">Fly camera</span></div>
+                <div class="hint-row"><span class="mc-key">SPACE / SHIFT</span> <span class="hint-desc">Ascend / Descend</span></div>
+                <div class="hint-row"><span class="mc-key">SCROLL WHEEL</span> <span class="hint-desc">Adjust speed</span></div>
+                <div class="hint-row"><span class="mc-key">L-CLICK</span> <span class="hint-desc">Lock cursor (ESC)</span></div>
+            </div>
+        </div>
     </div>
+
+    <!-- Schematic Tools Panel -->
     <div class="panel" id="tools">
-        <h3>📂 Load .litematica</h3>
-        <input type="file" id="upload-file" accept=".litematic,.schem">
-        <a href="nether_hub.litematic" download class="btn" id="download-btn">⬇ Download Nether Hub.litematic</a>
+        <div class="mc-panel-header">
+            <span class="mc-header-title">
+                <svg class="mc-icon" viewBox="0 0 16 16" width="14" height="14">
+                    <rect x="1" y="2" width="14" height="12" fill="#785220"/>
+                    <rect x="2" y="3" width="12" height="10" fill="#9C682C"/>
+                    <rect x="1" y="6" width="14" height="2" fill="#000000"/>
+                    <rect x="7" y="5" width="2" height="3" fill="#D0D0D0"/>
+                    <rect x="7.5" y="6" width="1" height="1.5" fill="#303030"/>
+                </svg>
+                SCHEMATIC TOOLS
+            </span>
+            <button type="button" class="mc-panel-toggle" aria-label="Toggle panel" onclick="const p=this.closest('.panel');p.classList.toggle('collapsed');this.textContent=p.classList.contains('collapsed')?'+':'—';">—</button>
+        </div>
+        <div class="mc-panel-content">
+            <div class="mc-section-label">IMPORT SCHEMATIC</div>
+            <div class="mc-file-picker">
+                <label for="upload-file" class="btn file-select-label" id="file-select-btn">
+                    <svg class="mc-icon" viewBox="0 0 16 16" width="13" height="13">
+                        <rect x="1" y="3" width="6" height="2" fill="#FFAA00"/>
+                        <rect x="1" y="5" width="14" height="9" fill="#FFAA00"/>
+                        <rect x="2" y="6" width="12" height="7" fill="#FFCC44"/>
+                    </svg>
+                    CHOOSE FILE
+                </label>
+                <input type="file" id="upload-file" accept=".litematic,.schem">
+                <div id="file-name-display">No file selected (.litematic, .schem)</div>
+            </div>
+
+            <div class="mc-section-label" style="margin-top: 14px;">EXPORT SCHEMATIC</div>
+            <button type="button" class="btn" id="download-btn">⬇ Download .litematic</button>
+        </div>
     </div>
+
+    <!-- Viewport Settings Panel -->
     <div class="panel" id="layer-control">
-        <label>Layer: <span id="layer-value">All</span></label>
-        <input type="range" id="layer-slider" min="0" max="100" value="100">
-        <div style="margin-top: 10px;">
-            <label>WASD Speed: <span id="speed-value">0.5</span></label>
-            <input type="range" id="speed-slider" min="0.1" max="3.0" step="0.1" value="0.5">
+        <div class="mc-panel-header">
+            <span class="mc-header-title">
+                <svg class="mc-icon" viewBox="0 0 16 16" width="14" height="14">
+                    <rect x="6" y="1" width="4" height="14" fill="#888894"/>
+                    <rect x="1" y="6" width="14" height="4" fill="#888894"/>
+                    <rect x="3" y="3" width="10" height="10" fill="#686874"/>
+                    <rect x="5" y="5" width="6" height="6" fill="#000000"/>
+                    <rect x="6" y="6" width="4" height="4" fill="#FFAA00"/>
+                </svg>
+                VIEWPORT SETTINGS
+            </span>
+            <button type="button" class="mc-panel-toggle" aria-label="Toggle panel" onclick="const p=this.closest('.panel');p.classList.toggle('collapsed');this.textContent=p.classList.contains('collapsed')?'+':'—';">—</button>
         </div>
-        <div style="margin-top: 10px;">
-            <label><input type="checkbox" id="ao-toggle" checked style="accent-color:#ff6a33"> Ambient Occlusion</label>
+        <div class="mc-panel-content">
+            <div class="mc-control-group">
+                <div class="mc-label-row">
+                    <label for="layer-slider">BUILD SLICE (Y):</label>
+                    <span class="mc-slider-val val-gold" id="layer-value">All</span>
+                </div>
+                <input type="range" id="layer-slider" min="0" max="100" value="100">
+            </div>
+
+            <div class="mc-control-group">
+                <div class="mc-label-row">
+                    <label for="speed-slider">FLY SPEED:</label>
+                    <span class="mc-slider-val val-aqua" id="speed-value">0.5</span>
+                </div>
+                <input type="range" id="speed-slider" min="0.1" max="3.0" step="0.1" value="0.5">
+            </div>
+
+            <div class="mc-control-group">
+                <label class="mc-checkbox-label">
+                    <input type="checkbox" id="ao-toggle" checked>
+                    <span>Ambient Occlusion</span>
+                </label>
+            </div>
         </div>
     </div>
+
+    <!-- Minecraft Crosshair -->
     <div class="crosshair" id="crosshair" style="display:none;"></div>
-    <div id="render-stats">FPS: <span id="fps-counter">0</span> | Draw calls: <span id="draw-calls">0</span> | Triangles: <span id="tri-count">0</span></div>
+
+    <!-- F3 Debug Screen HUD -->
+    <div id="render-stats">
+        <span class="f3-badge">[F3]</span>
+        <span>FPS: <span id="fps-counter">0</span></span>
+        <span class="f3-sep">|</span>
+        <span>DRAWS: <span id="draw-calls">0</span></span>
+        <span class="f3-sep">|</span>
+        <span>TRIS: <span id="tri-count">0</span></span>
+    </div>
+
     <canvas id="viewport"></canvas>
 
     <script type="importmap">
@@ -972,6 +1695,15 @@
         // MAIN LOAD PIPELINE
         // ═══════════════════════════════════════════════════════════
         let maxBuildY = 0, allBlocks = [];
+        let currentBuildName = 'Build';
+        let currentBuildDesc = '';
+
+        function updateDownloadButton(name) {
+            const btn = document.getElementById('download-btn');
+            if (!btn) return;
+            const safe = (name || 'build').trim();
+            btn.textContent = `⬇ Download ${safe}.litematic`;
+        }
 
         async function loadLitematicaData(buffer) {
             document.getElementById('loading').classList.remove('hide');
@@ -979,8 +1711,11 @@
             try {
                 const nbtData = await NBT.read(new Uint8Array(buffer));
                 const root = nbtData.data;
-                document.getElementById('build-name').textContent = root.Metadata?.Name || 'Litematica Build';
-                document.getElementById('build-desc').textContent = root.Metadata?.Description || 'Loaded successfully';
+                currentBuildName = root.Metadata?.Name || 'Litematica Build';
+                currentBuildDesc = root.Metadata?.Description || 'Loaded successfully';
+                document.getElementById('build-name').textContent = currentBuildName;
+                document.getElementById('build-desc').textContent = currentBuildDesc;
+                updateDownloadButton(currentBuildName);
 
                 if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); currentMesh = null; }
                 if (currentTranslucentMesh) { scene.remove(currentTranslucentMesh); currentTranslucentMesh.geometry.dispose(); currentTranslucentMesh = null; }
@@ -995,7 +1730,7 @@
                     const tot = abs.x * abs.y * abs.z;
                     let bi = [];
                     if (states) {
-                        bi = unpackBlockStates(states, Math.max(4, Math.ceil(Math.log2(palette.length))), tot);
+                        bi = unpackBlockStates(states, Math.max(2, Math.ceil(Math.log2(palette.length))), tot);
                     } else if (palette.length === 1) {
                         bi = new Int32Array(tot).fill(0);
                     }
@@ -1096,6 +1831,8 @@
 
         document.getElementById('upload-file').addEventListener('change', e => {
             const f = e.target.files[0]; if (!f) return;
+            const nameEl = document.getElementById('file-name-display');
+            if (nameEl) nameEl.textContent = f.name;
             const r = new FileReader();
             r.onload = ev => loadLitematicaData(ev.target.result);
             r.readAsArrayBuffer(f);
@@ -1141,9 +1878,12 @@
             try {
                 const build = generateDefaultBuild();
                 allBlocks = build.blocks;
+                currentBuildName = build.name || 'Ancient Nether Hub';
+                currentBuildDesc = build.description || '';
 
-                document.getElementById('build-name').textContent = build.name;
-                document.getElementById('build-desc').textContent = build.description;
+                document.getElementById('build-name').textContent = currentBuildName;
+                document.getElementById('build-desc').textContent = currentBuildDesc;
+                updateDownloadButton(currentBuildName);
 
                 if (currentMesh) { scene.remove(currentMesh); currentMesh.geometry.dispose(); currentMesh = null; }
                 if (currentTranslucentMesh) { scene.remove(currentTranslucentMesh); currentTranslucentMesh.geometry.dispose(); currentTranslucentMesh = null; }
@@ -1188,6 +1928,205 @@
                 document.getElementById('loading').classList.add('hide');
             }
         }
+
+        // ═══════════════════════════════════════════════════════════
+        // LITEMATICA EXPORTER
+        // ═══════════════════════════════════════════════════════════
+        async function exportCurrentBuildAsLitematic() {
+            if (!allBlocks || allBlocks.length === 0) {
+                alert('No blocks loaded to export!');
+                return;
+            }
+
+            const btn = document.getElementById('download-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⏳ Packing .litematic...';
+
+            try {
+                let minX = Infinity, maxX = -Infinity;
+                let minY = Infinity, maxY = -Infinity;
+                let minZ = Infinity, maxZ = -Infinity;
+
+                for (const b of allBlocks) {
+                    if (b.x < minX) minX = b.x;
+                    if (b.x > maxX) maxX = b.x;
+                    if (b.y < minY) minY = b.y;
+                    if (b.y > maxY) maxY = b.y;
+                    if (b.z < minZ) minZ = b.z;
+                    if (b.z > maxZ) maxZ = b.z;
+                }
+
+                const sizeX = maxX - minX + 1;
+                const sizeY = maxY - minY + 1;
+                const sizeZ = maxZ - minZ + 1;
+                const totalVolume = sizeX * sizeY * sizeZ;
+
+                // Build block lookup map in relative coordinates (0..size-1)
+                const blockMap = new Map();
+                for (const b of allBlocks) {
+                    const bn = b.type.replace('minecraft:', '').split('[')[0];
+                    if (SKIP_BLOCKS.has(bn)) continue;
+                    const lx = b.x - minX;
+                    const ly = b.y - minY;
+                    const lz = b.z - minZ;
+                    blockMap.set(`${lx},${ly},${lz}`, b.type);
+                }
+
+                // Palette with minecraft:air at index 0
+                const palette = [{ Name: 'minecraft:air' }];
+                const paletteLookup = new Map();
+                paletteLookup.set('minecraft:air', 0);
+
+                function parseBlockState(typeStr) {
+                    let name = typeStr;
+                    let props = null;
+                    const bi = typeStr.indexOf('[');
+                    if (bi !== -1) {
+                        name = typeStr.substring(0, bi);
+                        const propStr = typeStr.substring(bi + 1, typeStr.length - 1);
+                        props = {};
+                        for (const pair of propStr.split(',')) {
+                            const eq = pair.indexOf('=');
+                            if (eq > 0) props[pair.substring(0, eq).trim()] = pair.substring(eq + 1).trim();
+                        }
+                    }
+                    if (!name.startsWith('minecraft:')) name = 'minecraft:' + name;
+                    const entry = { Name: name };
+                    if (props && Object.keys(props).length > 0) entry.Properties = props;
+                    return entry;
+                }
+
+                // Populate palette from blocks
+                for (const b of allBlocks) {
+                    const bn = b.type.replace('minecraft:', '').split('[')[0];
+                    if (SKIP_BLOCKS.has(bn)) continue;
+                    if (!paletteLookup.has(b.type)) {
+                        paletteLookup.set(b.type, palette.length);
+                        palette.push(parseBlockState(b.type));
+                    }
+                }
+
+                // Indices in Litematica order: y -> z -> x
+                const indices = new Int32Array(totalVolume);
+                let idx = 0;
+                for (let y = 0; y < sizeY; y++) {
+                    for (let z = 0; z < sizeZ; z++) {
+                        for (let x = 0; x < sizeX; x++) {
+                            const key = `${x},${y},${z}`;
+                            const bType = blockMap.get(key) || 'minecraft:air';
+                            indices[idx++] = paletteLookup.get(bType) || 0;
+                        }
+                    }
+                }
+
+                // Bit-pack indices into BigInt64Array
+                const bitsPerBlock = Math.max(2, Math.ceil(Math.log2(palette.length)));
+                const totalBits = BigInt(totalVolume) * BigInt(bitsPerBlock);
+                const longCount = Number((totalBits + 63n) / 64n);
+                const blockStates = new BigInt64Array(longCount);
+
+                let longIdx = 0;
+                let bitOffset = 0n;
+
+                for (let i = 0; i < totalVolume; i++) {
+                    const val = BigInt(indices[i]);
+                    let bitsRemaining = BigInt(bitsPerBlock);
+                    let valOffset = 0n;
+
+                    while (bitsRemaining > 0n && longIdx < longCount) {
+                        const bitsAvailable = 64n - bitOffset;
+                        const bitsToWrite = bitsRemaining < bitsAvailable ? bitsRemaining : bitsAvailable;
+                        const mask = (1n << bitsToWrite) - 1n;
+                        const chunk = (val >> valOffset) & mask;
+
+                        blockStates[longIdx] |= (chunk << bitOffset);
+
+                        bitOffset += bitsToWrite;
+                        if (bitOffset === 64n) {
+                            bitOffset = 0n;
+                            longIdx++;
+                        }
+                        bitsRemaining -= bitsToWrite;
+                        valOffset += bitsToWrite;
+                    }
+                }
+
+                const buildName = currentBuildName || 'Minecraft_Build';
+                const regionKey = buildName.replace(/[^a-zA-Z0-9_\-]/g, '_') || 'Main';
+
+                const nbtData = {
+                    Version: new NBT.Int32(6),
+                    SubVersion: new NBT.Int32(1),
+                    MinecraftDataVersion: new NBT.Int32(3955),
+                    Metadata: {
+                        EnclosingSize: {
+                            x: new NBT.Int32(sizeX),
+                            y: new NBT.Int32(sizeY),
+                            z: new NBT.Int32(sizeZ)
+                        },
+                        Author: 'MinecraftArchitect',
+                        Description: currentBuildDesc || '',
+                        Name: buildName,
+                        Software: 'MinecraftArchitect_AI',
+                        RegionCount: new NBT.Int32(1),
+                        TimeCreated: BigInt(Date.now()),
+                        TimeModified: BigInt(Date.now()),
+                        TotalBlocks: new NBT.Int32(allBlocks.length),
+                        TotalVolume: new NBT.Int32(totalVolume),
+                        PreviewImageData: new Int32Array(0)
+                    },
+                    Regions: {
+                        [regionKey]: {
+                            Position: {
+                                x: new NBT.Int32(0),
+                                y: new NBT.Int32(0),
+                                z: new NBT.Int32(0)
+                            },
+                            Size: {
+                                x: new NBT.Int32(sizeX),
+                                y: new NBT.Int32(sizeY),
+                                z: new NBT.Int32(sizeZ)
+                            },
+                            BlockStatePalette: palette,
+                            BlockStates: blockStates,
+                            Entities: [],
+                            TileEntities: [],
+                            PendingBlockTicks: [],
+                            PendingFluidTicks: []
+                        }
+                    }
+                };
+
+                const compressed = await NBT.write(nbtData, { compression: 'gzip' });
+                const blob = new Blob([compressed], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const safeName = (buildName || 'build')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_\-]+/g, '_')
+                    .replace(/^_+|_+$/g, '') || 'build';
+                a.href = url;
+                a.download = `${safeName}.litematic`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+                btn.textContent = '✅ Downloaded!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+            } catch (err) {
+                console.error('Export error:', err);
+                alert('Export failed: ' + err.message);
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        document.getElementById('download-btn').addEventListener('click', exportCurrentBuildAsLitematic);
 
         const urlParams = new URLSearchParams(window.location.search);
         const fileToLoad = urlParams.get('file');
